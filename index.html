@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>星キャッチゲーム</title>
+  <title>星キャッチゲーム - 難易度選択版</title>
   <style>
     body {
       background-color: #1a1a2e;
@@ -11,24 +11,53 @@
       font-family: sans-serif;
       text-align: center;
       margin: 0;
-      padding: 20px;
+      padding: 15px;
     }
-    /* ゲーム画面の枠線と背景 */
+    .info-panel {
+      display: flex;
+      justify-content: center;
+      gap: 20px;
+      font-size: 18px;
+      font-weight: bold;
+      margin-bottom: 10px;
+    }
     canvas {
       background-color: #16213e;
       border: 3px solid #e94560;
       border-radius: 10px;
       display: block;
-      margin: 20px auto;
+      margin: 10px auto;
       touch-action: none;
     }
-    /* スマホ・iPad用操作ボタン */
+    /* 難易度選択ボタンのデザイン */
+    .mode-select {
+      margin: 15px 0;
+      display: flex;
+      justify-content: center;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+    .mode-btn {
+      font-size: 16px;
+      padding: 8px 16px;
+      background: #0f3460;
+      color: white;
+      border: 2px solid #e94560;
+      border-radius: 6px;
+      cursor: pointer;
+    }
+    .mode-btn.active {
+      background: #e94560;
+      font-weight: bold;
+    }
+    /* 操作ボタン */
     .controls {
       display: flex;
       justify-content: center;
       gap: 20px;
+      margin-top: 10px;
     }
-    button {
+    .ctrl-btn {
       font-size: 20px;
       padding: 12px 35px;
       background: #e94560;
@@ -38,7 +67,7 @@
       cursor: pointer;
       user-select: none;
     }
-    button:active {
+    .ctrl-btn:active {
       background: #0f3460;
     }
   </style>
@@ -46,25 +75,42 @@
 <body>
 
   <h1>⭐ 星キャッチゲーム</h1>
-  <p>スコア: <span id="score">0</span></p>
 
-  <!-- 描画用のキャンバス -->
-  <canvas id="gameCanvas" width="360" height="480"></canvas>
+  <!-- 難易度選択ボタン -->
+  <div class="mode-select">
+    <button class="mode-btn active" onclick="selectMode('easy', 5, this)">簡単 (猶予5)</button>
+    <button class="mode-btn" onclick="selectMode('normal', 3, this)">普通 (猶予3)</button>
+    <button class="mode-btn" onclick="selectMode('hard', 1, this)">むずい (猶予1)</button>
+    <button class="mode-btn" onclick="selectMode('extreme', 0, this)">激ムズ (即死)</button>
+  </div>
 
-  <!-- タッチ操作用のボタン -->
+  <!-- ステータス表示 -->
+  <div class="info-panel">
+    <div>スコア: <span id="score">0</span></div>
+    <div>ライフ: <span id="lives">❤️❤️❤️❤️❤️</span></div>
+  </div>
+
+  <!-- ゲーム画面 -->
+  <canvas id="gameCanvas" width="360" height="440"></canvas>
+
+  <!-- タッチ操作用ボタン -->
   <div class="controls">
-    <button id="leftBtn">◀ 左</button>
-    <button id="rightBtn">右 ▶</button>
+    <button class="ctrl-btn" id="leftBtn">◀ 左</button>
+    <button class="ctrl-btn" id="rightBtn">右 ▶</button>
   </div>
 
   <script>
     const canvas = document.getElementById('gameCanvas');
     const ctx = canvas.getContext('2d');
     const scoreEl = document.getElementById('score');
+    const livesEl = document.getElementById('lives');
 
     let score = 0;
+    let maxLives = 5;
+    let lives = 5;
+    let isGameOver = false;
 
-    // 1. プレイヤー（受ける板）のデータ
+    // 1. プレイヤーデータ
     const player = {
       x: canvas.width / 2 - 30,
       y: canvas.height - 30,
@@ -74,28 +120,76 @@
       dx: 0
     };
 
-    // 2. 落ちてくる星のデータ
+    // 2. 落ちてくる星データ
     const star = {
       x: Math.random() * (canvas.width - 30),
       y: 0,
       size: 24,
-      speed: 3
+      speed: 3.5
     };
 
-    // --- キーボード操作（PC向け） ---
+    // --- 「Oh！」ボイスを鳴らす関数 ---
+    function playOhVoice() {
+      if ('speechSynthesis' in window) {
+        window.speechSynthesis.cancel(); // 前の音声をキャンセル
+        const uttr = new SpeechSynthesisUtterance('Oh!');
+        uttr.lang = 'en-US'; // 英語発音
+        uttr.pitch = 1.3;    // 声の高さを少し高めに
+        uttr.rate = 1.2;     // 少し早めに「Oh!」
+        window.speechSynthesis.speak(uttr);
+      }
+    }
+
+    // --- 難易度切り替え処理 ---
+    function selectMode(mode, allowedMisses, btnElement) {
+      // ボタンの見た目更新
+      document.querySelectorAll('.mode-btn').forEach(b => b.classList.remove('active'));
+      btnElement.classList.add('active');
+
+      // 猶予（ライフ）設定
+      maxLives = allowedMisses;
+      
+      // 難易度ごとに星の落ちるスピードも調整
+      if (mode === 'easy') star.speed = 3;
+      if (mode === 'normal') star.speed = 4;
+      if (mode === 'hard') star.speed = 5.5;
+      if (mode === 'extreme') star.speed = 7;
+
+      resetGame();
+    }
+
+    // 画面のライフ表示を更新
+    function updateLivesDisplay() {
+      if (maxLives === 0) {
+        livesEl.textContent = '💀 1ミス即死';
+      } else {
+        livesEl.textContent = '❤️'.repeat(lives) || '💀 0';
+      }
+    }
+
+    // リセット処理
+    function resetGame() {
+      score = 0;
+      lives = maxLives;
+      isGameOver = false;
+      scoreEl.textContent = score;
+      updateLivesDisplay();
+      resetStar();
+    }
+
+    // --- 操作設定 ---
     document.addEventListener('keydown', (e) => {
       if (e.key === 'ArrowLeft' || e.key === 'a') player.dx = -player.speed;
       if (e.key === 'ArrowRight' || e.key === 'd') player.dx = player.speed;
+      if (isGameOver && e.key === ' ') resetGame();
     });
 
     document.addEventListener('keyup', (e) => {
       if (['ArrowLeft', 'ArrowRight', 'a', 'd'].includes(e.key)) player.dx = 0;
     });
 
-    // --- ボタン操作（タッチ/クリック向け） ---
     const leftBtn = document.getElementById('leftBtn');
     const rightBtn = document.getElementById('rightBtn');
-
     const startLeft = (e) => { e.preventDefault(); player.dx = -player.speed; };
     const startRight = (e) => { e.preventDefault(); player.dx = player.speed; };
     const stop = () => player.dx = 0;
@@ -110,63 +204,95 @@
     rightBtn.addEventListener('mousedown', startRight);
     rightBtn.addEventListener('mouseup', stop);
 
-    // 3. ゲームループ（毎秒約60回実行される処理）
+    // スマホ等のタッチでリトライできるようにする
+    canvas.addEventListener('click', () => {
+      if (isGameOver) resetGame();
+    });
+
+    // --- メインゲームループ ---
     function update() {
-      // プレイヤーの移動処理
-      player.x += player.dx;
-      // 画面外に出ないように制限
-      if (player.x < 0) player.x = 0;
-      if (player.x + player.width > canvas.width) player.x = canvas.width - player.width;
+      if (!isGameOver) {
+        // プレイヤー移動
+        player.x += player.dx;
+        if (player.x < 0) player.x = 0;
+        if (player.x + player.width > canvas.width) player.x = canvas.width - player.width;
 
-      // 星の落下処理
-      star.y += star.speed;
+        // 星移動
+        star.y += star.speed;
 
-      // 当たり判定（プレイヤーと星がぶつかったか）
-      if (
-        star.y + star.size >= player.y &&
-        star.x + star.size >= player.x &&
-        star.x <= player.x + player.width
-      ) {
-        score += 10;
-        scoreEl.textContent = score;
-        resetStar();
+        // 当たり判定（キャッチ成功）
+        if (
+          star.y + star.size >= player.y &&
+          star.x + star.size >= player.x &&
+          star.x <= player.x + player.width
+        ) {
+          score += 10;
+          scoreEl.textContent = score;
+          resetStar();
+        }
+
+        // ミス判定（下に落ちた）
+        if (star.y > canvas.height) {
+          playOhVoice(); // 🔊 「Oh！」ボイスを再生！
+
+          if (maxLives === 0) {
+            // 激ムズ（1回で終了）
+            isGameOver = true;
+          } else {
+            lives--;
+            updateLivesDisplay();
+            if (lives <= 0) {
+              isGameOver = true;
+            } else {
+              resetStar();
+            }
+          }
+        }
       }
 
-      // 星が一番下まで落ちてしまった場合
-      if (star.y > canvas.height) {
-        resetStar();
-      }
-
-      // 画面の再描画
       draw();
-
-      // 次のフレームを呼び出す
       requestAnimationFrame(update);
     }
 
-    // 星の位置とスピードを再設定
     function resetStar() {
       star.y = 0;
       star.x = Math.random() * (canvas.width - star.size);
-      // スコアが上がるほど少しずつ速くする
-      star.speed = 3 + Math.floor(score / 50);
     }
 
-    // 画面に図形を描く関数
+    // --- 描画処理 ---
     function draw() {
-      // 画面をリセット
       ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-      // プレイヤーを描画
+      // プレイヤー
       ctx.fillStyle = '#4ecca3';
       ctx.fillRect(player.x, player.y, player.width, player.height);
 
-      // 星（絵文字）を描画
-      ctx.font = `${star.size}px sans-serif`;
-      ctx.fillText('⭐', star.x, star.y + star.size);
+      // 星
+      if (!isGameOver) {
+        ctx.font = `${star.size}px sans-serif`;
+        ctx.fillText('⭐', star.x, star.y + star.size);
+      }
+
+      // ゲームオーバー画面
+      if (isGameOver) {
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.75)';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+        ctx.fillStyle = '#e94560';
+        ctx.font = 'bold 30px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText('GAME OVER', canvas.width / 2, canvas.height / 2 - 20);
+
+        ctx.fillStyle = '#fff';
+        ctx.font = '16px sans-serif';
+        ctx.fillText(`最終スコア: ${score}点`, canvas.width / 2, canvas.height / 2 + 20);
+        ctx.fillText('画面タップかボタンでリトライ', canvas.width / 2, canvas.height / 2 + 50);
+        ctx.textAlign = 'left';
+      }
     }
 
-    // ゲーム開始！
+    // 初期化と開始
+    updateLivesDisplay();
     update();
   </script>
 </body>
