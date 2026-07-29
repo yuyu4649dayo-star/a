@@ -1,954 +1,403 @@
 <!DOCTYPE html>
 <html lang="ja">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>ZOMBIE vs HUMAN: SURVIVAL 5v5</title>
-  <!-- Three.js (3Dライブラリ) の読み込み -->
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
-  <style>
-    /* 全体設定（コピー・選択・ズームの禁止） */
-    * {
-      user-select: none;
-      -webkit-user-select: none;
-      -webkit-touch-callout: none;
-      touch-action: manipulation;
-      box-sizing: border-box;
-      margin: 0;
-      padding: 0;
-    }
-    body, html {
-      width: 100%;
-      height: 100%;
-      overflow: hidden;
-      background-color: #050505;
-      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-      color: #fff;
-    }
-
-    #canvas-container {
-      width: 100%;
-      height: 100%;
-      position: absolute;
-      top: 0;
-      left: 0;
-      z-index: 1;
-    }
-
-    /* 1. 陣営選択画面（かっこいいUI） */
-    #select-screen {
-      position: absolute;
-      top: 0;
-      left: 0;
-      width: 100%;
-      height: 100%;
-      z-index: 100;
-      background: radial-gradient(circle, #1a1c29 0%, #08080c 100%);
-      display: flex;
-      flex-direction: column;
-      justify-content: center;
-      align-items: center;
-    }
-
-    .game-title {
-      font-size: 42px;
-      font-weight: 900;
-      letter-spacing: 4px;
-      text-transform: uppercase;
-      margin-bottom: 10px;
-      text-shadow: 0 0 20px rgba(255, 0, 85, 0.8), 0 0 40px rgba(0, 217, 255, 0.8);
-      text-align: center;
-    }
-
-    .sub-title {
-      font-size: 16px;
-      color: #8a8d9b;
-      margin-bottom: 40px;
-      letter-spacing: 2px;
-    }
-
-    .team-container {
-      display: flex;
-      gap: 30px;
-      flex-wrap: wrap;
-      justify-content: center;
-    }
-
-    .team-card {
-      width: 240px;
-      height: 320px;
-      background: rgba(255, 255, 255, 0.03);
-      border: 2px solid rgba(255, 255, 255, 0.1);
-      border-radius: 16px;
-      display: flex;
-      flex-direction: column;
-      justify-content: space-between;
-      align-items: center;
-      padding: 25px 15px;
-      cursor: pointer;
-      transition: all 0.3s ease;
-      backdrop-filter: blur(10px);
-    }
-
-    .team-card.zombie:hover {
-      border-color: #ff2a5f;
-      box-shadow: 0 0 30px rgba(255, 42, 95, 0.5);
-      transform: translateY(-8px);
-      background: rgba(255, 42, 95, 0.1);
-    }
-
-    .team-card.human:hover {
-      border-color: #00d9ff;
-      box-shadow: 0 0 30px rgba(0, 217, 255, 0.5);
-      transform: translateY(-8px);
-      background: rgba(0, 217, 255, 0.1);
-    }
-
-    .team-icon {
-      font-size: 70px;
-      margin-top: 10px;
-    }
-
-    .team-name {
-      font-size: 24px;
-      font-weight: bold;
-      letter-spacing: 2px;
-    }
-
-    .zombie .team-name { color: #ff2a5f; }
-    .human .team-name { color: #00d9ff; }
-
-    .team-desc {
-      font-size: 12px;
-      color: #aaa;
-      text-align: center;
-      line-height: 1.5;
-    }
-
-    .select-btn {
-      padding: 10px 24px;
-      border: none;
-      border-radius: 20px;
-      font-weight: bold;
-      cursor: pointer;
-      width: 100%;
-    }
-
-    .zombie .select-btn { background: #ff2a5f; color: #fff; }
-    .human .select-btn { background: #00d9ff; color: #000; }
-
-    /* 2. ロード画面 */
-    #loading-screen {
-      position: absolute;
-      top: 0;
-      left: 0;
-      width: 100%;
-      height: 100%;
-      z-index: 90;
-      background: #090a0f;
-      display: none;
-      flex-direction: column;
-      justify-content: center;
-      align-items: center;
-    }
-
-    .loader-title {
-      font-size: 20px;
-      letter-spacing: 3px;
-      margin-bottom: 20px;
-      color: #ddd;
-    }
-
-    .progress-bar-container {
-      width: 300px;
-      height: 12px;
-      background: rgba(255, 255, 255, 0.1);
-      border-radius: 6px;
-      overflow: hidden;
-      border: 1px solid rgba(255, 255, 255, 0.2);
-    }
-
-    .progress-bar {
-      width: 0%;
-      height: 100%;
-      background: linear-gradient(90deg, #ff2a5f, #00d9ff);
-      transition: width 0.1s linear;
-    }
-
-    /* 3. ゲーム中HUD (UI) */
-    #hud {
-      position: absolute;
-      top: 0;
-      left: 0;
-      width: 100%;
-      height: 100%;
-      z-index: 10;
-      pointer-events: none;
-      display: none;
-    }
-
-    .scoreboard {
-      position: absolute;
-      top: 20px;
-      left: 50%;
-      transform: translateX(-50%);
-      background: rgba(0, 0, 0, 0.6);
-      padding: 10px 25px;
-      border-radius: 25px;
-      border: 1px solid rgba(255, 255, 255, 0.2);
-      display: flex;
-      align-items: center;
-      gap: 20px;
-      font-size: 18px;
-      font-weight: bold;
-      backdrop-filter: blur(5px);
-    }
-
-    .score-zombie { color: #ff2a5f; }
-    .score-human { color: #00d9ff; }
-
-    .bottom-hud {
-      position: absolute;
-      bottom: 20px;
-      left: 20px;
-      right: 20px;
-      display: flex;
-      justify-content: space-between;
-      align-items: flex-end;
-    }
-
-    .stat-box {
-      background: rgba(0, 0, 0, 0.65);
-      padding: 15px 20px;
-      border-radius: 12px;
-      border: 1px solid rgba(255, 255, 255, 0.15);
-      backdrop-filter: blur(5px);
-    }
-
-    .hp-bar-bg {
-      width: 180px;
-      height: 14px;
-      background: rgba(255, 255, 255, 0.1);
-      border-radius: 7px;
-      overflow: hidden;
-      margin-top: 6px;
-    }
-
-    .hp-bar-fill {
-      width: 100%;
-      height: 100%;
-      background: #2ecc71;
-      transition: width 0.2s;
-    }
-
-    /* アクションボタン（画面タッチ操作用） */
-    .action-buttons {
-      display: flex;
-      gap: 10px;
-      pointer-events: auto;
-    }
-
-    .act-btn {
-      width: 65px;
-      height: 65px;
-      border-radius: 50%;
-      background: rgba(0, 0, 0, 0.7);
-      border: 2px solid #fff;
-      color: #fff;
-      font-size: 12px;
-      font-weight: bold;
-      display: flex;
-      flex-direction: column;
-      justify-content: center;
-      align-items: center;
-      cursor: pointer;
-      box-shadow: 0 4px 10px rgba(0,0,0,0.5);
-    }
-
-    .act-btn:active {
-      transform: scale(0.92);
-      background: rgba(255, 255, 255, 0.3);
-    }
-
-    /* ゲームオーバー / 勝利オーバーレイ */
-    #result-screen {
-      position: absolute;
-      top: 0;
-      left: 0;
-      width: 100%;
-      height: 100%;
-      z-index: 1000;
-      background: rgba(0, 0, 0, 0.85);
-      display: none;
-      flex-direction: column;
-      justify-content: center;
-      align-items: center;
-    }
-
-    .result-title {
-      font-size: 48px;
-      font-weight: bold;
-      margin-bottom: 20px;
-    }
-
-    .btn-retry {
-      padding: 12px 30px;
-      font-size: 18px;
-      font-weight: bold;
-      background: #fff;
-      color: #000;
-      border: none;
-      border-radius: 25px;
-      cursor: pointer;
-      margin-top: 20px;
-    }
-
-    /* 十字キー（操作用UI） */
-    .dpad {
-      position: absolute;
-      bottom: 20px;
-      left: 20px;
-      width: 120px;
-      height: 120px;
-      pointer-events: auto;
-      display: grid;
-      grid-template-columns: repeat(3, 1fr);
-      grid-template-rows: repeat(3, 1fr);
-      gap: 3px;
-    }
-
-    .dpad-btn {
-      background: rgba(255, 255, 255, 0.15);
-      border: 1px solid rgba(255, 255, 255, 0.3);
-      border-radius: 6px;
-      display: flex;
-      justify-content: center;
-      align-items: center;
-      font-size: 14px;
-      color: #fff;
-    }
-    .dpad-btn:active { background: rgba(255, 255, 255, 0.4); }
-  </style>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>Survival Game</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            user-select: none;
+            -webkit-user-select: none;
+        }
+        body {
+            overflow: hidden;
+            background-color: #1e1e1e;
+            font-family: sans-serif;
+        }
+        #gameCanvas {
+            display: block;
+            touch-action: none;
+        }
+        /* UIボタンのスタイル */
+        #ui-layer {
+            position: absolute;
+            top: 15px;
+            left: 15px;
+            z-index: 10;
+        }
+        .btn {
+            padding: 10px 18px;
+            font-size: 16px;
+            font-weight: bold;
+            color: #fff;
+            background-color: #2e7d32;
+            border: 2px solid #a5d6a7;
+            border-radius: 8px;
+            box-shadow: 0 4px 0 #1b5e20;
+            cursor: pointer;
+        }
+        .btn:active {
+            transform: translateY(2px);
+            box-shadow: 0 2px 0 #1b5e20;
+        }
+    </style>
 </head>
-<body oncontextmenu="return false;">
+<body>
 
-  <!-- 3D表示領域 -->
-  <div id="canvas-container"></div>
-
-  <!-- 1. かっこいい陣営選択画面 -->
-  <div id="select-screen">
-    <div class="game-title">ZOMBIE vs HUMAN</div>
-    <div class="sub-title">5v5 TACTICAL SURVIVAL</div>
-
-    <div class="team-container">
-      <!-- ゾンビ陣営 -->
-      <div class="team-card zombie" onclick="startLoading('zombie')">
-        <div class="team-icon">🧟‍♂️</div>
-        <div class="team-name">ゾンビ陣営</div>
-        <div class="team-desc">近接攻撃と絶叫（1.5秒スタン）で人間を狩り尽くせ！<br>※銃使用不可</div>
-        <button class="select-btn">陣営を選択</button>
-      </div>
-
-      <!-- 人間陣営 -->
-      <div class="team-card human" onclick="startLoading('human')">
-        <div class="team-icon">👨‍🎤</div>
-        <div class="team-name">人間陣営</div>
-        <div class="team-desc">マップでピストルと弾を拾い、体術と射撃でゾンビを撃滅せよ！</div>
-        <button class="select-btn">陣営を選択</button>
-      </div>
-    </div>
-  </div>
-
-  <!-- 2. ロード画面 -->
-  <div id="loading-screen">
-    <div class="loader-title">MISSION LOADING...</div>
-    <div class="progress-bar-container">
-      <div class="progress-bar" id="progress-bar"></div>
-    </div>
-  </div>
-
-  <!-- 3. ゲームHUD -->
-  <div id="hud">
-    <!-- スコアボード -->
-    <div class="scoreboard">
-      <span class="score-zombie">🧟 ゾンビ: <span id="zombie-count">5</span></span>
-      <span>VS</span>
-      <span class="score-human">👨 人間: <span id="human-count">5</span></span>
+    <div id="ui-layer">
+        <button class="btn" id="seButton">ボタン効果音 🔊</button>
     </div>
 
-    <!-- 左下: D-PAD（スマホ・タッチ用操作） -->
-    <div class="dpad">
-      <div></div>
-      <div class="dpad-btn" id="btn-up">▲</div>
-      <div></div>
-      <div class="dpad-btn" id="btn-left">◀</div>
-      <div></div>
-      <div class="dpad-btn" id="btn-right">▶</div>
-      <div></div>
-      <div class="dpad-btn" id="btn-down">▼</div>
-      <div></div>
-    </div>
+    <canvas id="gameCanvas"></canvas>
 
-    <!-- 右下: ステータス & アクションボタン -->
-    <div class="bottom-hud">
-      <div style="width: 140px;"></div> <!-- D-PADのスペース確保 -->
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
 
-      <div class="stat-box">
-        <div id="role-title" style="font-size: 12px; color: #aaa;">ROLE: HUMAN</div>
-        <div style="font-weight: bold; margin-top: 2px;">HP <span id="hp-text">100</span>/100</div>
-        <div class="hp-bar-bg"><div class="hp-bar-fill" id="hp-fill"></div></div>
-        <div id="ammo-display" style="margin-top: 8px; font-weight: bold; color: #f1c40f;">
-          🔫 10 / 0 (予備)
-        </div>
-      </div>
-
-      <!-- アクションボタン群 -->
-      <div class="action-buttons" id="action-buttons">
-        <!-- JSで陣営に応じてボタンを動的生成 -->
-      </div>
-    </div>
-  </div>
-
-  <!-- 4. 結果画面 -->
-  <div id="result-screen">
-    <div class="result-title" id="result-text">VICTORY</div>
-    <button class="btn-retry" onclick="location.reload()">タイトルに戻る</button>
-  </div>
-
-  <script>
-    /* ==========================================
-       ゲーム全体データ & 変数
-    ========================================== */
-    let selectedTeam = 'human'; // 'human' or 'zombie'
-    let scene, camera, renderer;
-    let player = null;
-    const players = []; // 全員（プレイヤー＋NPC）のリスト
-    const items = [];   // マップ上の弾薬箱・ピストル
-    let keys = {};
-
-    // プレイヤーの移動速度など
-    const SPEED = 0.15;
-    let cameraAngleY = 0;
-
-    /* ==========================================
-       1. ロード画面処理
-    ========================================== */
-    function startLoading(team) {
-      selectedTeam = team;
-      document.getElementById('select-screen').style.display = 'none';
-      document.getElementById('loading-screen').style.display = 'flex';
-
-      let progress = 0;
-      const bar = document.getElementById('progress-bar');
-      const interval = setInterval(() => {
-        progress += 4;
-        bar.style.width = progress + '%';
-        if (progress >= 100) {
-          clearInterval(interval);
-          document.getElementById('loading-screen').style.display = 'none';
-          document.getElementById('hud').style.display = 'block';
-          initGame();
+        // 画面サイズ調整
+        function resize() {
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
         }
-      }, 50);
-    }
+        window.addEventListener('resize', resize);
+        resize();
 
-    /* ==========================================
-       2. 3Dシーン & ゲーム初期化 (Three.js)
-    ========================================== */
-    function initGame() {
-      const container = document.getElementById('canvas-container');
-      
-      // シーン作成
-      scene = new THREE.Scene();
-      scene.background = new THREE.Color(0x0a0c14);
-      scene.fog = new THREE.FogExp2(0x0a0c14, 0.03);
+        // ==========================================
+        // 1. 効果音（Web Audio API）
+        // ==========================================
+        const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
 
-      // カメラ（3人称視点 TPS）
-      camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 1000);
+        function playSE(freq = 600, duration = 0.08) {
+            if (audioCtx.state === 'suspended') audioCtx.resume();
+            const osc = audioCtx.createOscillator();
+            const gain = audioCtx.createGain();
 
-      // レンダラー
-      renderer = new THREE.WebGLRenderer({ antialias: true });
-      renderer.setSize(window.innerWidth, window.innerHeight);
-      renderer.shadowMap.enabled = true;
-      container.appendChild(renderer.domElement);
+            osc.type = 'sine';
+            osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
+            osc.frequency.exponentialRampToValueAtTime(freq + 200, audioCtx.currentTime + duration);
 
-      // ライト
-      const ambientLight = new THREE.AmbientLight(0xffffff, 0.4);
-      scene.add(ambientLight);
+            gain.gain.setValueAtTime(0.2, audioCtx.currentTime);
+            gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + duration);
 
-      const dirLight = new THREE.DirectionalLight(0x7799bb, 0.8);
-      dirLight.position.set(20, 40, 20);
-      dirLight.castShadow = true;
-      scene.add(dirLight);
+            osc.connect(gain);
+            gain.connect(audioCtx.destination);
 
-      // マップ（地面＆障害物）の構築
-      createMap();
+            osc.start();
+            osc.stop(audioCtx.currentTime + duration);
+        }
 
-      // 5vs5 キャラクター生成
-      createTeams();
-
-      // アイテム（弾・ピストル）のスポーン
-      spawnItems();
-
-      // UIボタン設定
-      setupUI();
-
-      // キーボードイベント
-      window.addEventListener('keydown', e => keys[e.key.toLowerCase()] = true);
-      window.addEventListener('keyup', e => keys[e.key.toLowerCase()] = false);
-      window.addEventListener('resize', onWindowResize);
-
-      // メインループスタート
-      animate();
-    }
-
-    /* ==========================================
-       3. マップ & アイテム作成
-    ========================================== */
-    function createMap() {
-      // 地面
-      const floorGeo = new THREE.PlaneGeometry(80, 80);
-      const floorMat = new THREE.MeshStandardMaterial({ color: 0x1a1c23, roughness: 0.8 });
-      const floor = new THREE.Mesh(floorGeo, floorMat);
-      floor.rotation.x = -Math.PI / 2;
-      floor.receiveShadow = true;
-      scene.add(floor);
-
-      // マップ外壁・障害物（箱）
-      const boxGeo = new THREE.BoxGeometry(4, 4, 4);
-      const boxMat = new THREE.MeshStandardMaterial({ color: 0x3a3d4a });
-
-      for (let i = 0; i < 16; i++) {
-        const box = new THREE.Mesh(boxGeo, boxMat);
-        box.position.set((Math.random() - 0.5) * 60, 2, (Math.random() - 0.5) * 60);
-        box.castShadow = true;
-        box.receiveShadow = true;
-        scene.add(box);
-      }
-    }
-
-    function spawnItems() {
-      // 弾薬箱・ピストルをマップ内に散らばせる
-      for (let i = 0; i < 10; i++) {
-        const isAmmo = Math.random() > 0.3;
-        const itemGeo = isAmmo ? new THREE.BoxGeometry(0.8, 0.5, 0.8) : new THREE.CylinderGeometry(0.2, 0.2, 0.8);
-        const itemMat = new THREE.MeshBasicMaterial({ color: isAmmo ? 0xf1c40f : 0x3498db });
-        const item = new THREE.Mesh(itemGeo, itemMat);
-
-        item.position.set((Math.random() - 0.5) * 60, 0.4, (Math.random() - 0.5) * 60);
-        item.userData = { type: isAmmo ? 'ammo' : 'pistol' };
-        scene.add(item);
-        items.push(item);
-      }
-    }
-
-    /* ==========================================
-       4. キャラクター & チーム（5vs5）生成
-    ========================================== */
-    function createCharacter(type, isPlayer, position) {
-      const group = new THREE.Group();
-
-      // 体（胴体）
-      const bodyGeo = new THREE.CylinderGeometry(0.4, 0.4, 1.4);
-      const bodyMat = new THREE.MeshStandardMaterial({
-        color: type === 'zombie' ? 0x27ae60 : 0x2980b9
-      });
-      const body = new THREE.Mesh(bodyGeo, bodyMat);
-      body.position.y = 0.7;
-      body.castShadow = true;
-      group.add(body);
-
-      // 頭
-      const headGeo = new THREE.SphereGeometry(0.35);
-      const headMat = new THREE.MeshStandardMaterial({
-        color: type === 'zombie' ? 0x1e8449 : 0xf1c40f
-      });
-      const head = new THREE.Mesh(headGeo, headMat);
-      head.position.y = 1.7;
-      group.add(head);
-
-      // 人間の場合は手にピストルを持たせる
-      let gunMesh = null;
-      if (type === 'human') {
-        const gunGeo = new THREE.BoxGeometry(0.15, 0.2, 0.5);
-        const gunMat = new THREE.MeshBasicMaterial({ color: 0x111111 });
-        gunMesh = new THREE.Mesh(gunGeo, gunMat);
-        gunMesh.position.set(0.4, 1.1, 0.4);
-        group.add(gunMesh);
-      }
-
-      group.position.copy(position);
-      scene.add(group);
-
-      // キャラクターオブジェクト定義
-      const charObj = {
-        mesh: group,
-        type: type, // 'zombie' or 'human'
-        isPlayer: isPlayer,
-        hp: 100,
-        ammoInGun: type === 'human' ? 10 : 0, // 初期10発
-        reserveAmmo: type === 'human' ? 20 : 0,
-        hasPistol: type === 'human',
-        isStunned: false,
-        stunTimer: 0,
-        screamCooldown: 0
-      };
-
-      players.push(charObj);
-      if (isPlayer) player = charObj;
-    }
-
-    function createTeams() {
-      // 人間5人、ゾンビ5人
-      for (let i = 0; i < 5; i++) {
-        // 人間
-        const isHumanPlayer = (selectedTeam === 'human' && i === 0);
-        createCharacter('human', isHumanPlayer, new THREE.Vector3(-25 + i * 2, 0, -20));
-
-        // ゾンビ
-        const isZombiePlayer = (selectedTeam === 'zombie' && i === 0);
-        createCharacter('zombie', isZombiePlayer, new THREE.Vector3(-25 + i * 2, 0, 20));
-      }
-
-      document.getElementById('role-title').textContent = `ROLE: ${player.type.toUpperCase()} (PLAYER)`;
-      updateHUD();
-    }
-
-    /* ==========================================
-       5. 操作・アクション機能
-    ========================================== */
-    function setupUI() {
-      const btnBox = document.getElementById('action-buttons');
-      btnBox.innerHTML = '';
-
-      if (player.type === 'human') {
-        btnBox.innerHTML = `
-          <div class="act-btn" onclick="humanShoot()">🔫<br>射撃</div>
-          <div class="act-btn" onclick="humanPunch()">👊<br>殴り</div>
-          <div class="act-btn" onclick="humanKick()">🦵<br>蹴り</div>
-          <div class="act-btn" onclick="humanReload()">🔄<br>リロード</div>
-        `;
-      } else {
-        btnBox.innerHTML = `
-          <div class="act-btn" onclick="zombieScratch()">💅<br>引っ掻き</div>
-          <div class="act-btn" onclick="zombieBite()">🦷<br>噛みつき</div>
-          <div class="act-btn" onclick="zombieScream()">😱<br>叫び</div>
-        `;
-      }
-
-      // スマホ用タッチ操作（D-PAD）
-      const bindDpad = (id, key) => {
-        const el = document.getElementById(id);
-        el.addEventListener('touchstart', (e) => { e.preventDefault(); keys[key] = true; });
-        el.addEventListener('touchend', (e) => { e.preventDefault(); keys[key] = false; });
-        el.addEventListener('mousedown', () => keys[key] = true);
-        el.addEventListener('mouseup', () => keys[key] = false);
-      };
-      bindDpad('btn-up', 'w');
-      bindDpad('btn-down', 's');
-      bindDpad('btn-left', 'a');
-      bindDpad('btn-right', 'd');
-    }
-
-    // --- 人間アクション ---
-    function humanShoot(char = player) {
-      if (char.isStunned || char.hp <= 0) return;
-      if (char.ammoInGun <= 0) {
-        if (char.isPlayer) alert("弾切れ！リロードしてください。");
-        return;
-      }
-
-      char.ammoInGun--;
-      if (char.isPlayer) updateHUD();
-
-      // 弾丸エフェクト & ヒット判定
-      const bulletGeo = new THREE.SphereGeometry(0.1);
-      const bulletMat = new THREE.MeshBasicMaterial({ color: 0xfff176 });
-      const bullet = new THREE.Mesh(bulletGeo, bulletMat);
-      bullet.position.copy(char.mesh.position).add(new THREE.Vector3(0, 1.1, 0));
-      scene.add(bullet);
-
-      // 発射方向
-      const dir = new THREE.Vector3(0, 0, 1).applyAxisAngle(new THREE.Vector3(0, 1, 0), char.mesh.rotation.y);
-
-      let dist = 0;
-      const bInterval = setInterval(() => {
-        bullet.position.addScaledVector(dir, 0.8);
-        dist += 0.8;
-
-        // ヒット判定
-        players.forEach(target => {
-          if (target.type === 'zombie' && target.hp > 0) {
-            if (bullet.position.distanceTo(target.mesh.position) < 1.0) {
-              damageCharacter(target, 25);
-              scene.remove(bullet);
-              clearInterval(bInterval);
-            }
-          }
+        // ボタンのクリック時に効果音を鳴らす
+        document.getElementById('seButton').addEventListener('pointerdown', (e) => {
+            e.stopPropagation();
+            playSE(700, 0.1);
         });
 
-        if (dist > 30) {
-          scene.remove(bullet);
-          clearInterval(bInterval);
-        }
-      }, 30);
-    }
+        // ==========================================
+        // 2. ステータスバランス調整
+        // ==========================================
+        // 弱体化したゾンビ
+        const ZOMBIE_STATS = { hp: 30, maxHp: 30, attack: 5, speed: 1.2, radius: 16 };
+        
+        // 強化された人間NPC
+        const NPC_STATS = { hp: 120, maxHp: 120, attack: 25, speed: 2.2, radius: 16, detectRange: 200 };
 
-    function humanPunch(char = player) { performMelee(char, 'zombie', 15, 1.8); }
-    function humanKick(char = player) { performMelee(char, 'zombie', 20, 2.0); }
-    function humanReload(char = player) {
-      if (char.reserveAmmo <= 0 || char.ammoInGun >= 10) return;
-      const needed = 10 - char.ammoInGun;
-      const add = Math.min(needed, char.reserveAmmo);
-      char.ammoInGun += add;
-      char.reserveAmmo -= add;
-      if (char.isPlayer) updateHUD();
-    }
+        // プレイヤー
+        const player = { x: 150, y: 200, radius: 16, hp: 100, maxHp: 100, speed: 3.2, angle: 0 };
 
-    // --- ゾンビアクション ---
-    function zombieScratch(char = player) { performMelee(char, 'human', 20, 1.8); } // 引っ掻き
-    function zombieBite(char = player) { performMelee(char, 'human', 40, 1.5); }    // 噛みつき
+        // キャラクター配列
+        let zombies = [
+            { x: 500, y: 200, hp: ZOMBIE_STATS.hp, cooldown: 0 },
+            { x: 600, y: 350, hp: ZOMBIE_STATS.hp, cooldown: 0 }
+        ];
 
-    // 叫び（範囲内の人間を1.5秒間スタン）
-    function zombieScream(char = player) {
-      if (char.isStunned || char.hp <= 0) return;
-      if (char.screamCooldown > 0) return;
+        let npcs = [
+            { x: 250, y: 300, hp: NPC_STATS.hp, cooldown: 0 }
+        ];
 
-      char.screamCooldown = 8; // クールダウン8秒
+        // 障害物（壁）
+        const obstacles = [
+            { x: 300, y: 100, w: 120, h: 200 },
+            { x: 150, y: 400, w: 300, h: 60 }
+        ];
 
-      // 衝撃波演出
-      const ringGeo = new THREE.RingGeometry(0.5, 6, 32);
-      const ringMat = new THREE.MeshBasicMaterial({ color: 0xff2a5f, side: THREE.DoubleSide, transparent: true, opacity: 0.8 });
-      const ring = new THREE.Mesh(ringGeo, ringMat);
-      ring.rotation.x = -Math.PI / 2;
-      ring.position.copy(char.mesh.position).add(new THREE.Vector3(0, 0.1, 0));
-      scene.add(ring);
-
-      let scale = 1;
-      const fade = setInterval(() => {
-        scale += 0.2;
-        ring.scale.set(scale, scale, 1);
-        ringMat.opacity -= 0.08;
-        if (ringMat.opacity <= 0) {
-          scene.remove(ring);
-          clearInterval(fade);
-        }
-      }, 30);
-
-      // スタン判定 (半径7m以内の人間)
-      players.forEach(target => {
-        if (target.type === 'human' && target.hp > 0) {
-          if (char.mesh.position.distanceTo(target.mesh.position) < 7.0) {
-            target.isStunned = true;
-            target.stunTimer = 1.5; // 1.5秒停止
-          }
-        }
-      });
-    }
-
-    // 近接攻撃共通関数
-    function performMelee(attacker, targetType, damage, range) {
-      if (attacker.isStunned || attacker.hp <= 0) return;
-
-      players.forEach(target => {
-        if (target.type === targetType && target.hp > 0) {
-          if (attacker.mesh.position.distanceTo(target.mesh.position) < range) {
-            damageCharacter(target, damage);
-          }
-        }
-      });
-    }
-
-    function damageCharacter(char, amount) {
-      char.hp -= amount;
-      if (char.hp <= 0) {
-        char.hp = 0;
-        char.mesh.position.y = -10; // マップ外へ移動（死亡）
-      }
-      checkGameStatus();
-      if (player) updateHUD();
-    }
-
-    /* ==========================================
-       6. AI (NPC) ロジック & アップデート
-    ========================================== */
-    function updateNPCs(delta) {
-      players.forEach(npc => {
-        if (npc.isPlayer || npc.hp <= 0) return;
-
-        // スタン処理
-        if (npc.isStunned) {
-          npc.stunTimer -= delta;
-          if (npc.stunTimer <= 0) npc.isStunned = false;
-          return;
-        }
-
-        // 一番近い敵を探す
-        let closestEnemy = null;
-        let minDist = 999;
-        players.forEach(other => {
-          if (other.type !== npc.type && other.hp > 0) {
-            const d = npc.mesh.position.distanceTo(other.mesh.position);
-            if (d < minDist) {
-              minDist = d;
-              closestEnemy = other;
+        // ==========================================
+        // 3. 障害物のすり抜け防止（当たり判定）
+        // ==========================================
+        function isCollidingWithWalls(x, y, radius) {
+            for (let wall of obstacles) {
+                let closestX = Math.max(wall.x, Math.min(x, wall.x + wall.w));
+                let closestY = Math.max(wall.y, Math.min(y, wall.y + wall.h));
+                let distX = x - closestX;
+                let distY = y - closestY;
+                if ((distX * distX + distY * distY) < (radius * radius)) {
+                    return true; // 衝突あり
+                }
             }
-          }
-        });
-
-        if (closestEnemy) {
-          // 敵に向く
-          npc.mesh.lookAt(closestEnemy.mesh.position.x, npc.mesh.position.y, closestEnemy.mesh.position.z);
-
-          // ゾンビAI行動
-          if (npc.type === 'zombie') {
-            if (minDist > 1.5) {
-              npc.mesh.translateZ(SPEED * 0.8);
-            } else {
-              if (Math.random() < 0.03) zombieBite(npc);
-              else zombieScratch(npc);
-            }
-            if (minDist < 6 && Math.random() < 0.005) zombieScream(npc);
-          }
-
-          // 人間AI行動
-          if (npc.type === 'human') {
-            if (minDist > 8) {
-              npc.mesh.translateZ(SPEED * 0.8);
-            } else if (minDist < 3) {
-              npc.mesh.translateZ(-SPEED * 0.6); // 距離をとる
-              humanPunch(npc);
-            } else {
-              if (Math.random() < 0.04) humanShoot(npc);
-            }
-          }
-        }
-      });
-    }
-
-    /* ==========================================
-       7. マップ上のアイテム拾い (人間のみ)
-    ========================================== */
-    function checkItemPickups() {
-      items.forEach((item, index) => {
-        if (!item.visible) return;
-
-        players.forEach(p => {
-          // ★仕様：ゾンビは銃や弾を使えない（拾えない）
-          if (p.type === 'human' && p.hp > 0) {
-            if (p.mesh.position.distanceTo(item.position) < 1.2) {
-              if (item.userData.type === 'ammo') {
-                p.reserveAmmo += 10; // 予備弾薬+10
-              } else if (item.userData.type === 'pistol') {
-                p.hasPistol = true;
-              }
-              item.visible = false; // 拾われたので消える
-              if (p.isPlayer) updateHUD();
-            }
-          }
-        });
-      });
-    }
-
-    /* ==========================================
-       8. 勝敗判定 & HUD更新
-    ========================================== */
-    function checkGameStatus() {
-      const zombiesAlive = players.filter(p => p.type === 'zombie' && p.hp > 0).length;
-      const humansAlive = players.filter(p => p.type === 'human' && p.hp > 0).length;
-
-      document.getElementById('zombie-count').textContent = zombiesAlive;
-      document.getElementById('human-count').textContent = humansAlive;
-
-      if (zombiesAlive === 0 || humansAlive === 0) {
-        const resultScreen = document.getElementById('result-screen');
-        const resultText = document.getElementById('result-text');
-        resultScreen.style.display = 'flex';
-
-        if ((selectedTeam === 'human' && humansAlive > 0) || (selectedTeam === 'zombie' && zombiesAlive > 0)) {
-          resultText.textContent = 'VICTORY!';
-          resultText.style.color = '#2ecc71';
-        } else {
-          resultText.textContent = 'DEFEAT...';
-          resultText.style.color = '#e74c3c';
-        }
-      }
-    }
-
-    function updateHUD() {
-      if (!player) return;
-      document.getElementById('hp-text').textContent = player.hp;
-      document.getElementById('hp-fill').style.width = player.hp + '%';
-
-      const ammoBox = document.getElementById('ammo-display');
-      if (player.type === 'human') {
-        ammoBox.style.display = 'block';
-        ammoBox.textContent = `🔫 ${player.ammoInGun} / ${player.reserveAmmo} (予備)`;
-      } else {
-        ammoBox.style.display = 'none'; // ゾンビは弾薬UI非表示
-      }
-    }
-
-    /* ==========================================
-       9. メインループ & カメラ追従
-    ========================================== */
-    const clock = new THREE.Clock();
-
-    function animate() {
-      requestAnimationFrame(animate);
-      const delta = clock.getDelta();
-
-      // プレイヤーのスタン制御
-      if (player && player.isStunned) {
-        player.stunTimer -= delta;
-        if (player.stunTimer <= 0) player.isStunned = false;
-      }
-
-      // プレイヤー移動（非スタン時）
-      if (player && !player.isStunned && player.hp > 0) {
-        let moveZ = 0, moveX = 0;
-        if (keys['w']) moveZ += 1;
-        if (keys['s']) moveZ -= 1;
-        if (keys['a']) moveX += 1;
-        if (keys['d']) moveX -= 1;
-
-        if (moveX !== 0 || moveZ !== 0) {
-          const moveAngle = Math.atan2(moveX, moveZ);
-          player.mesh.rotation.y = cameraAngleY + moveAngle;
-          player.mesh.translateZ(SPEED);
+            return false;
         }
 
-        // キーボードショートカット
-        if (keys['r'] && player.type === 'human') humanReload();
-      }
+        function moveEntity(entity, dx, dy) {
+            // X方向への移動チェック
+            if (!isCollidingWithWalls(entity.x + dx, entity.y, entity.radius)) {
+                entity.x += dx;
+            }
+            // Y方向への移動チェック
+            if (!isCollidingWithWalls(entity.x, entity.y + dy, entity.radius)) {
+                entity.y += dy;
+            }
+        }
 
-      // 叫びクールダウン減算
-      players.forEach(p => {
-        if (p.screamCooldown > 0) p.screamCooldown -= delta;
-      });
+        // ==========================================
+        // 4. タッチ操作UI（ジョイスティック ＆ はたく丸エフェクト）
+        // ==========================================
+        let touchMoveId = null;
+        let touchActionId = null;
 
-      // NPC AIの更新
-      updateNPCs(delta);
+        let joystick = { active: false, startX: 0, startY: 0, currX: 0, currY: 0 };
+        let hitRing = { active: false, x: 0, y: 0, progress: 0 };
 
-      // アイテム取得チェック
-      checkItemPickups();
+        canvas.addEventListener('touchstart', (e) => {
+            e.preventDefault();
+            for (let t of e.changedTouches) {
+                // 画面左半分：移動用バーチャル十字キー
+                if (t.clientX < canvas.width / 2 && touchMoveId === null) {
+                    touchMoveId = t.identifier;
+                    joystick = { active: true, startX: t.clientX, startY: t.clientY, currX: t.clientX, currY: t.clientY };
+                } 
+                // 画面右半分：荒野行動風タッチ操作 ＆ マイクラ風「はたく」丸エフェクト
+                else if (t.clientX >= canvas.width / 2) {
+                    touchActionId = t.identifier;
+                    hitRing = { active: true, x: t.clientX, y: t.clientY, progress: 0 };
+                    playSE(900, 0.05); // 打撃音
 
-      // ★三人称後方カメラ（TPS）の追従
-      if (player && player.hp > 0) {
-        const relativeCameraOffset = new THREE.Vector3(0, 3.5, -5.5);
-        const cameraPosition = relativeCameraOffset.applyMatrix4(player.mesh.matrixWorld);
-        camera.position.lerp(cameraPosition, 0.1);
-        camera.lookAt(player.mesh.position.x, player.mesh.position.y + 1.2, player.mesh.position.z);
-      }
+                    // タッチした方向にプレイヤーが攻撃
+                    player.angle = Math.atan2(t.clientY - player.y, t.clientX - player.x);
+                    attackZombiesInFront();
+                }
+            }
+        }, { passive: false });
 
-      renderer.render(scene, camera);
-    }
+        canvas.addEventListener('touchmove', (e) => {
+            e.preventDefault();
+            for (let t of e.changedTouches) {
+                if (t.identifier === touchMoveId) {
+                    joystick.currX = t.clientX;
+                    joystick.currY = t.clientY;
+                }
+                if (t.identifier === touchActionId) {
+                    hitRing.x = t.clientX;
+                    hitRing.y = t.clientY;
+                    player.angle = Math.atan2(t.clientY - player.y, t.clientX - player.x);
+                }
+            }
+        }, { passive: false });
 
-    function onWindowResize() {
-      camera.aspect = window.innerWidth / window.innerHeight;
-      camera.updateProjectionMatrix();
-      renderer.setSize(window.innerWidth, window.innerHeight);
-    }
-  </script>
+        const resetTouch = (e) => {
+            for (let t of e.changedTouches) {
+                if (t.identifier === touchMoveId) {
+                    touchMoveId = null;
+                    joystick.active = false;
+                }
+                if (t.identifier === touchActionId) {
+                    touchActionId = null;
+                    hitRing.active = false;
+                }
+            }
+        };
+        canvas.addEventListener('touchend', resetTouch);
+        canvas.addEventListener('touchcancel', resetTouch);
+
+        // プレイヤーの攻撃処理
+        function attackZombiesInFront() {
+            zombies.forEach(zombie => {
+                let dist = Math.hypot(zombie.x - player.x, zombie.y - player.y);
+                if (dist < 60) {
+                    zombie.hp -= 20;
+                    playSE(300, 0.1); // ダメージ音
+                }
+            });
+        }
+
+        // ==========================================
+        // 5. ゲームループ＆更新処理
+        // ==========================================
+        function update() {
+            // --- プレイヤー移動処理 ---
+            if (joystick.active) {
+                let dx = joystick.currX - joystick.startX;
+                let dy = joystick.currY - joystick.startY;
+                let dist = Math.hypot(dx, dy);
+
+                if (dist > 5) {
+                    let angle = Math.atan2(dy, dx);
+                    if (!touchActionId) player.angle = angle; // 攻撃中でなければ移動方向を向く
+                    let moveX = Math.cos(angle) * player.speed;
+                    let moveY = Math.sin(angle) * player.speed;
+                    moveEntity(player, moveX, moveY);
+                }
+            }
+
+            // --- 人間NPCのAI更新 ---
+            npcs.forEach(npc => {
+                if (npc.cooldown > 0) npc.cooldown--;
+
+                // 一番近いゾンビを探す
+                let targetZombie = null;
+                let minDist = NPC_STATS.detectRange;
+
+                zombies.forEach(zombie => {
+                    let d = Math.hypot(zombie.x - npc.x, zombie.y - npc.y);
+                    if (d < minDist) {
+                        minDist = d;
+                        targetZombie = zombie;
+                    }
+                });
+
+                if (targetZombie) {
+                    // ゾンビに向かって移動
+                    let angle = Math.atan2(targetZombie.y - npc.y, targetZombie.x - npc.x);
+                    moveEntity(npc, Math.cos(angle) * NPC_STATS.speed, Math.sin(angle) * NPC_STATS.speed);
+
+                    // 攻撃範囲内なら攻撃（強いNPCがゾンビを倒す）
+                    if (minDist < 35 && npc.cooldown === 0) {
+                        targetZombie.hp -= NPC_STATS.attack;
+                        npc.cooldown = 30; // 0.5秒ごとに攻撃
+                        playSE(500, 0.05);
+                    }
+                }
+            });
+
+            // --- ゾンビのAI更新 ---
+            zombies.forEach(zombie => {
+                if (zombie.cooldown > 0) zombie.cooldown--;
+
+                // 一番近い人間（プレイヤーまたはNPC）を狙う
+                let targets = [player, ...npcs];
+                let nearestTarget = targets.reduce((prev, curr) => {
+                    let distPrev = Math.hypot(prev.x - zombie.x, prev.y - zombie.y);
+                    let distCurr = Math.hypot(curr.x - zombie.x, curr.y - zombie.y);
+                    return (distCurr < distPrev) ? curr : prev;
+                });
+
+                let dist = Math.hypot(nearestTarget.x - zombie.x, nearestTarget.y - zombie.y);
+                let angle = Math.atan2(nearestTarget.y - zombie.y, nearestTarget.x - zombie.x);
+
+                // 弱体化したゾンビの遅い移動
+                moveEntity(zombie, Math.cos(angle) * ZOMBIE_STATS.speed, Math.sin(angle) * ZOMBIE_STATS.speed);
+
+                // 攻撃（攻撃力が低い）
+                if (dist < 32 && zombie.cooldown === 0) {
+                    nearestTarget.hp -= ZOMBIE_STATS.attack;
+                    zombie.cooldown = 50;
+                }
+            });
+
+            // 死亡処理（HPが0以下になったら除外）
+            zombies = zombies.filter(z => z.hp > 0);
+            npcs = npcs.filter(n => n.hp > 0);
+        }
+
+        // ==========================================
+        // 6. 描画処理
+        // ==========================================
+        function draw() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            // --- 障害物（壁）描画 ---
+            ctx.fillStyle = '#424242';
+            ctx.strokeStyle = '#616161';
+            ctx.lineWidth = 4;
+            obstacles.forEach(w => {
+                ctx.fillRect(w.x, w.y, w.w, w.h);
+                ctx.strokeRect(w.x, w.y, w.w, w.h);
+            });
+
+            // --- 人間NPC描画 (青緑色) ---
+            npcs.forEach(npc => drawCharacter(npc, '#00bcd4', 'NPC', npc.hp, NPC_STATS.maxHp));
+
+            // --- ゾンビ描画 (緑色) ---
+            zombies.forEach(zombie => drawCharacter(zombie, '#4caf50', 'ゾンビ', zombie.hp, ZOMBIE_STATS.maxHp));
+
+            // --- プレイヤー描画 (青色) ---
+            drawCharacter(player, '#2196f3', 'プレイヤー', player.hp, player.maxHp);
+
+            // --- 移動用ジョイスティックUI ---
+            if (joystick.active) {
+                ctx.beginPath();
+                ctx.arc(joystick.startX, joystick.startY, 50, 0, Math.PI * 2);
+                ctx.fillStyle = 'rgba(255, 255, 255, 0.2)';
+                ctx.fill();
+
+                ctx.beginPath();
+                ctx.arc(joystick.currX, joystick.currY, 25, 0, Math.PI * 2);
+                ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
+                ctx.fill();
+            }
+
+            // --- マイクラ風「はたく」丸い円形エフェクト ---
+            if (hitRing.active) {
+                hitRing.progress += 0.08;
+                if (hitRing.progress > 1) hitRing.progress = 0;
+
+                ctx.save();
+                ctx.beginPath();
+                ctx.arc(hitRing.x, hitRing.y, 30, 0, Math.PI * 2 * hitRing.progress);
+                ctx.strokeStyle = 'rgba(255, 255, 255, 0.9)';
+                ctx.lineWidth = 5;
+                ctx.stroke();
+                ctx.restore();
+            }
+        }
+
+        // キャラクター共通描画関数
+        function drawCharacter(char, color, label, hp, maxHp) {
+            ctx.save();
+            ctx.translate(char.x, char.y);
+
+            // 本体
+            ctx.beginPath();
+            ctx.arc(0, 0, char.radius, 0, Math.PI * 2);
+            ctx.fillStyle = color;
+            ctx.fill();
+            ctx.strokeStyle = '#fff';
+            ctx.lineWidth = 2;
+            ctx.stroke();
+
+            // 向きの線
+            if (char.angle !== undefined) {
+                ctx.beginPath();
+                ctx.moveTo(0, 0);
+                ctx.lineTo(Math.cos(char.angle) * 22, Math.sin(char.angle) * 22);
+                ctx.strokeStyle = '#fff';
+                ctx.lineWidth = 3;
+                ctx.stroke();
+            }
+
+            // HPバー
+            ctx.fillStyle = 'rgba(0,0,0,0.5)';
+            ctx.fillRect(-20, -28, 40, 6);
+            ctx.fillStyle = hp > maxHp * 0.3 ? '#4caf50' : '#f44336';
+            ctx.fillRect(-20, -28, (hp / maxHp) * 40, 6);
+
+            // 名前の表示
+            ctx.fillStyle = '#fff';
+            ctx.font = '12px sans-serif';
+            ctx.textAlign = 'center';
+            ctx.fillText(label, 0, -32);
+
+            ctx.restore();
+        }
+
+        // メインループ
+        function loop() {
+            update();
+            draw();
+            requestAnimationFrame(loop);
+        }
+        loop();
+    </script>
 </body>
 </html>
