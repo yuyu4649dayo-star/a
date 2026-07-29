@@ -8,7 +8,7 @@
         * {
             margin: 0; padding: 0; box-sizing: border-box;
             user-select: none; -webkit-user-select: none;
-            touch-action: none; /* 画面のスクロール・ズレを完全にシャットアウト */
+            touch-action: none;
         }
         body, html {
             width: 100%; height: 100%; overflow: hidden;
@@ -46,7 +46,14 @@
         #game-hud { position: absolute; width: 100%; height: 100%; pointer-events: none; display: none; z-index: 10; }
         .hud-top { position: absolute; top: 15px; left: 15px; color: #fff; font-weight: bold; font-size: 16px; text-shadow: 1px 1px 3px #000; }
         
-        /* 視覚的 十字キー（ジョイスティック）UI */
+        /* カウントダウン表示 */
+        #countdown-display {
+            position: absolute; top: 40%; left: 50%; transform: translate(-50%, -50%);
+            font-size: 72px; font-weight: bold; color: #ffeb3b; text-shadow: 0 0 20px #000;
+            display: none; pointer-events: none; z-index: 30;
+        }
+
+        /* 十字キーUI */
         #dpad-base {
             position: absolute; bottom: 30px; left: 30px;
             width: 120px; height: 120px;
@@ -68,7 +75,8 @@
             padding: 12px 20px; font-size: 16px; font-weight: bold; color: #fff; background: rgba(0,0,0,0.6);
             border: 2px solid #fff; border-radius: 30px; cursor: pointer;
         }
-        .act-btn:active { background: rgba(255,255,255,0.4); }
+        .act-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+        .act-btn:active:not(:disabled) { background: rgba(255,255,255,0.4); }
 
         /* マイクラ風はたく丸UI Canvas */
         #fxCanvas { position: absolute; top:0; left:0; width:100%; height:100%; pointer-events: none; z-index: 20; }
@@ -101,7 +109,9 @@
             <div id="ammoInfo">弾薬: -</div>
         </div>
 
-        <!-- 画面左下のバーチャル十字キーUI -->
+        <div id="countdown-display">5</div>
+
+        <!-- バーチャル十字キーUI -->
         <div id="dpad-base">
             <div id="dpad-knob"></div>
         </div>
@@ -112,7 +122,6 @@
     <canvas id="fxCanvas"></canvas>
 
     <script>
-        // ブラウザのタッチスワイプでの画面ズレ防止
         document.addEventListener('touchmove', (e) => e.preventDefault(), { passive: false });
 
         // --- 効果音再生 (Web Audio API) ---
@@ -139,6 +148,11 @@
         
         let playerStats = { hp: 100, maxHp: 100, ammo: 10, reserveAmmo: 20, isStunned: false, stunTimer: 0 };
         let cameraAngleY = 0, cameraAngleX = 0.3;
+
+        // クールダウン ＆ カウントダウン管理
+        let gameStarted = false;
+        let roarCooldownTimer = 0; // 秒数管理
+        let lastTime = performance.now();
 
         // 銃のリコイル・発射エフェクト用
         let recoilZ = 0;
@@ -176,7 +190,6 @@
             document.getElementById('teamInfo').innerText = `陣営: ${playerTeam === 'human' ? '人間' : 'ゾンビ'}`;
             setupHUDButtons();
 
-            // Three.js シーン
             scene = new THREE.Scene();
             scene.background = new THREE.Color(0x111115);
             scene.fog = new THREE.FogExp2(0x111115, 0.02);
@@ -186,7 +199,6 @@
             renderer.setSize(window.innerWidth, window.innerHeight);
             document.body.appendChild(renderer.domElement);
 
-            // ライト
             const ambLight = new THREE.AmbientLight(0xffffff, 0.6);
             scene.add(ambLight);
             const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
@@ -200,35 +212,57 @@
             floor.rotation.x = -Math.PI / 2;
             scene.add(floor);
 
-            // 障害物配置（引っかかりにくい柱構造に変更）
             createObstacles();
-
-            // 散らばる弾薬箱（2個）
             createAmmoBoxes();
 
-            // 5vs5 キャラクター生成
+            // 5人横並びで整列スポーン
             spawnEntities();
 
-            // タッチ操作設定
             setupTouchControls();
 
-            // リサイズ対応
             window.addEventListener('resize', () => {
                 camera.aspect = window.innerWidth / window.innerHeight;
                 camera.updateProjectionMatrix();
                 renderer.setSize(window.innerWidth, window.innerHeight);
             });
 
+            // 5秒カウントダウン開始
+            startCountdown();
+
+            lastTime = performance.now();
             animate();
         }
 
-        // 3. 障害物の配置（引っかかりを防ぐためにサイズ調整）
+        // カウントダウン処理（5 -> 4 -> 3 -> 2 -> 1 -> スタート！）
+        function startCountdown() {
+            gameStarted = false;
+            let count = 5;
+            const display = document.getElementById('countdown-display');
+            display.style.display = 'block';
+            display.innerText = count;
+
+            let timer = setInterval(() => {
+                count--;
+                if (count > 0) {
+                    display.innerText = count;
+                    playSE(600, 'sine', 0.1);
+                } else if (count === 0) {
+                    display.innerText = "スタート！";
+                    playSE(1000, 'square', 0.25);
+                    gameStarted = true;
+                } else {
+                    clearInterval(timer);
+                    display.style.display = 'none';
+                }
+            }, 1000);
+        }
+
         function createObstacles() {
             const obsData = [
                 { x: -8, z: 0, w: 4, h: 4, d: 4 },
                 { x: 8, z: 0, w: 4, h: 4, d: 4 },
-                { x: 0, z: -12, w: 10, h: 4, d: 3 },
-                { x: 0, z: 12, w: 10, h: 4, d: 3 }
+                { x: 0, z: -8, w: 8, h: 4, d: 3 },
+                { x: 0, z: 8, w: 8, h: 4, d: 3 }
             ];
             const mat = new THREE.MeshStandardMaterial({ color: 0x444450 });
 
@@ -246,7 +280,6 @@
             });
         }
 
-        // 散らばる弾薬箱
         function createAmmoBoxes() {
             const mat = new THREE.MeshStandardMaterial({ color: 0xffcc00 });
             const positions = [{ x: -4, z: -2 }, { x: 4, z: 2 }];
@@ -259,50 +292,63 @@
             });
         }
 
-        // 5vs5 スポーン処理
+        // 5人横並びスポーン処理
         function spawnEntities() {
             const humanMat = new THREE.MeshStandardMaterial({ color: 0x2196f3 });
             const zombieMat = new THREE.MeshStandardMaterial({ color: 0x4caf50 });
-
             const isPlayerHuman = (playerTeam === 'human');
             const pGeo = new THREE.CylinderGeometry(0.5, 0.5, 1.8);
-            
-            // プレイヤー生成
-            playerBody = new THREE.Mesh(pGeo, isPlayerHuman ? humanMat : zombieMat);
-            playerBody.position.set(0, 0.9, 15);
-            scene.add(playerBody);
 
-            if (isPlayerHuman) attachGunToPlayer();
+            // 横並びの座標 (X軸方向に5人並べる)
+            const spawnXs = [-8, -4, 0, 4, 8];
 
-            player = {
-                mesh: playerBody, isPlayer: true, team: playerTeam,
-                hp: 100, maxHp: 100, speed: 0.12, stunTimer: 0
-            };
-            entities.push(player);
-
-            // NPC (味方4体 + 敵5体)
-            for (let i = 0; i < 9; i++) {
-                const isHuman = (i < 4) ? isPlayerHuman : !isPlayerHuman;
-                const mesh = new THREE.Mesh(pGeo, isHuman ? humanMat : zombieMat);
-                
-                // 出現位置
-                const spawnZ = isHuman ? 10 + Math.random()*4 : -10 - Math.random()*4;
-                const spawnX = (Math.random() - 0.5) * 16;
-                mesh.position.set(spawnX, 0.9, spawnZ);
+            // 1. 人間チーム生成 (Z = 18 のライン)
+            let hSlot = 0;
+            for (let i = 0; i < 5; i++) {
+                const mesh = new THREE.Mesh(pGeo, humanMat);
+                mesh.position.set(spawnXs[i], 0.9, 18);
                 scene.add(mesh);
 
-                entities.push({
-                    mesh: mesh, isPlayer: false, team: isHuman ? 'human' : 'zombie',
-                    hp: isHuman ? 120 : 60, maxHp: isHuman ? 120 : 60,
-                    speed: isHuman ? 0.08 : 0.09, cooldown: 0, stunTimer: 0
-                });
+                if (isPlayerHuman && i === 2) { // プレイヤーは中央に配置
+                    playerBody = mesh;
+                    attachGunToPlayer();
+                    player = {
+                        mesh: playerBody, isPlayer: true, team: 'human',
+                        hp: 100, maxHp: 100, speed: 0.06, stunTimer: 0, isDead: false
+                    };
+                    entities.push(player);
+                } else {
+                    entities.push({
+                        mesh: mesh, isPlayer: false, team: 'human',
+                        hp: 120, maxHp: 120, speed: 0.04, cooldown: 0, stunTimer: 0, isDead: false
+                    });
+                }
+            }
+
+            // 2. ゾンビチーム生成 (Z = -18 のライン)
+            for (let i = 0; i < 5; i++) {
+                const mesh = new THREE.Mesh(pGeo, zombieMat);
+                mesh.position.set(spawnXs[i], 0.9, -18);
+                scene.add(mesh);
+
+                if (!isPlayerHuman && i === 2) { // プレイヤーは中央に配置
+                    playerBody = mesh;
+                    player = {
+                        mesh: playerBody, isPlayer: true, team: 'zombie',
+                        hp: 100, maxHp: 100, speed: 0.06, stunTimer: 0, isDead: false
+                    };
+                    entities.push(player);
+                } else {
+                    entities.push({
+                        mesh: mesh, isPlayer: false, team: 'zombie',
+                        hp: 60, maxHp: 60, speed: 0.045, cooldown: 0, stunTimer: 0, isDead: false
+                    });
+                }
             }
         }
 
-        // プレイヤーに銃を装着
         function attachGunToPlayer() {
             const gunGroup = new THREE.Group();
-            
             const gunBodyGeo = new THREE.BoxGeometry(0.12, 0.18, 0.5);
             const gunMat = new THREE.MeshStandardMaterial({ color: 0x111111 });
             const gunBody = new THREE.Mesh(gunBodyGeo, gunMat);
@@ -320,7 +366,6 @@
             gunMesh = gunGroup;
         }
 
-        // HUDボタン生成
         function setupHUDButtons() {
             const container = document.getElementById('actionContainer');
             container.innerHTML = '';
@@ -336,12 +381,11 @@
                 container.innerHTML = `
                     <button class="act-btn" onclick="zombieBite()">噛みつき 🦷</button>
                     <button class="act-btn" onclick="zombieScratch()">引っ掻き 爪</button>
-                    <button class="act-btn" onclick="zombieRoar()">叫び（スタン） 🗣️</button>
+                    <button class="act-btn" id="btnRoar" onclick="zombieRoar()">叫び（スタン） 🗣️</button>
                 `;
             }
         }
 
-        // 当たり判定（障害物すり抜け防止）
         function checkObstacleCollision(newPos, radius = 0.5) {
             for (let obs of obstacles) {
                 const box = obs.box;
@@ -356,22 +400,18 @@
             return false;
         }
 
-        // プレイヤーの移動処理（カメラ方向に準拠した正しい前進・後退）
         function movePlayer() {
-            if (player.stunTimer > 0) return;
+            if (!gameStarted || player.stunTimer > 0 || player.isDead) return;
 
             if (Math.abs(dpadInput.x) > 0.05 || Math.abs(dpadInput.y) > 0.05) {
-                // カメラの見ている方向を計算
                 const forwardX = -Math.sin(cameraAngleY);
                 const forwardZ = -Math.cos(cameraAngleY);
                 const rightX = Math.cos(cameraAngleY);
                 const rightZ = -Math.sin(cameraAngleY);
 
-                // スティックの入力からワールド移動量を算出 (dpadInput.y < 0 が前進)
                 const moveX = (rightX * dpadInput.x - forwardX * dpadInput.y) * player.speed;
                 const moveZ = (rightZ * dpadInput.x - forwardZ * dpadInput.y) * player.speed;
 
-                // X軸・Z軸それぞれ壁滑り移動チェック
                 let nextPos = player.mesh.position.clone();
                 nextPos.x += moveX;
                 if (!checkObstacleCollision(nextPos)) player.mesh.position.x = nextPos.x;
@@ -380,14 +420,12 @@
                 nextPos.z += moveZ;
                 if (!checkObstacleCollision(nextPos)) player.mesh.position.z = nextPos.z;
 
-                // 進行方向を向く
                 player.mesh.rotation.y = Math.atan2(moveX, moveZ);
             }
         }
 
-        // 射撃（反動・エフェクト付き）
         function humanShoot() {
-            if (playerStats.ammo <= 0) { playSE(200, 'sawtooth', 0.1); return; }
+            if (!gameStarted || player.isDead || playerStats.ammo <= 0) { playSE(200, 'sawtooth', 0.1); return; }
             playerStats.ammo--;
             playSE(900, 'square', 0.08);
             updateHUD();
@@ -397,7 +435,7 @@
             createBulletTracer();
 
             entities.forEach(e => {
-                if (e.team !== 'human' && e.hp > 0) {
+                if (e.team !== 'human' && e.hp > 0 && !e.isDead) {
                     const dist = player.mesh.position.distanceTo(e.mesh.position);
                     if (dist < 15) e.hp -= 25;
                 }
@@ -418,7 +456,7 @@
         }
 
         function humanReload() {
-            if (playerStats.reserveAmmo <= 0 || playerStats.ammo >= 10) return;
+            if (!gameStarted || player.isDead || playerStats.reserveAmmo <= 0 || playerStats.ammo >= 10) return;
             playSE(400, 'sine', 0.2);
             const needed = 10 - playerStats.ammo;
             const load = Math.min(needed, playerStats.reserveAmmo);
@@ -427,16 +465,21 @@
             updateHUD();
         }
 
-        function humanPunch() { playSE(500, 'triangle', 0.1); meleeAttack(15, 2.5); }
-        function humanKick() { playSE(300, 'triangle', 0.15); meleeAttack(25, 3.0); }
+        function humanPunch() { if (gameStarted && !player.isDead) { playSE(500, 'triangle', 0.1); meleeAttack(15, 2.5); } }
+        function humanKick() { if (gameStarted && !player.isDead) { playSE(300, 'triangle', 0.15); meleeAttack(25, 3.0); } }
 
-        function zombieBite() { playSE(250, 'sawtooth', 0.15); meleeAttack(30, 2.0); }
-        function zombieScratch() { playSE(400, 'sawtooth', 0.1); meleeAttack(18, 2.5); }
+        function zombieBite() { if (gameStarted && !player.isDead) { playSE(250, 'sawtooth', 0.15); meleeAttack(30, 2.0); } }
+        function zombieScratch() { if (gameStarted && !player.isDead) { playSE(400, 'sawtooth', 0.1); meleeAttack(18, 2.5); } }
         
+        // 1分間（60秒）に1回制限の叫び
         function zombieRoar() {
+            if (!gameStarted || player.isDead || roarCooldownTimer > 0) return;
+            
+            roarCooldownTimer = 60; // 60秒のクールダウンをセット
             playSE(150, 'sawtooth', 0.4);
+
             entities.forEach(e => {
-                if (e.team === 'human' && e.hp > 0) {
+                if (e.team === 'human' && e.hp > 0 && !e.isDead) {
                     if (player.mesh.position.distanceTo(e.mesh.position) < 8) {
                         e.stunTimer = 90;
                     }
@@ -446,25 +489,19 @@
 
         function meleeAttack(dmg, range) {
             entities.forEach(e => {
-                if (e.team !== playerTeam && e.hp > 0) {
+                if (e.team !== playerTeam && e.hp > 0 && !e.isDead) {
                     if (player.mesh.position.distanceTo(e.mesh.position) < range) e.hp -= dmg;
                 }
             });
         }
 
-        // タッチ操作 ＆ バーチャル十字キー（UI更新付き）
         function setupTouchControls() {
-            const dpadBase = document.getElementById('dpad-base');
-            const dpadKnob = document.getElementById('dpad-knob');
-
             window.addEventListener('touchstart', (e) => {
                 for (let t of e.changedTouches) {
-                    // 左側：十字キー
                     if (t.clientX < window.innerWidth / 2 && touchDpadId === null) {
                         touchDpadId = t.identifier;
                         updateDpadUI(t.clientX, t.clientY);
                     } 
-                    // 右側：視点・攻撃エフェクト
                     else if (t.clientX >= window.innerWidth / 2 && touchLookId === null) {
                         touchLookId = t.identifier;
                         lastTouchX = t.clientX; lastTouchY = t.clientY;
@@ -493,7 +530,7 @@
                     if (t.identifier === touchDpadId) {
                         touchDpadId = null;
                         dpadInput = { x: 0, y: 0 };
-                        dpadKnob.style.transform = `translate(0px, 0px)`;
+                        document.getElementById('dpad-knob').style.transform = `translate(0px, 0px)`;
                     }
                     if (t.identifier === touchLookId) { touchLookId = null; hitRing.active = false; }
                 }
@@ -502,7 +539,6 @@
             window.addEventListener('touchcancel', resetTouch);
         }
 
-        // 十字キーUIの表示更新と入力計算
         function updateDpadUI(tx, ty) {
             const dpadBase = document.getElementById('dpad-base').getBoundingClientRect();
             const centerX = dpadBase.left + dpadBase.width / 2;
@@ -517,8 +553,6 @@
                 let clampDist = Math.min(dist, maxRadius);
                 let knobX = (dx / dist) * clampDist;
                 let knobY = (dy / dist) * clampDist;
-                
-                // スティックUIを指の位置に動かす
                 document.getElementById('dpad-knob').style.transform = `translate(${knobX}px, ${knobY}px)`;
 
                 dpadInput.x = dx / maxRadius;
@@ -530,10 +564,43 @@
         function animate() {
             requestAnimationFrame(animate);
 
+            // デルタタイム計算（秒単位のタイマー用）
+            const now = performance.now();
+            const delta = (now - lastTime) / 1000;
+            lastTime = now;
+
+            // 「叫び」のクールダウン計算 ＆ ボタンテキスト更新
+            if (roarCooldownTimer > 0) {
+                roarCooldownTimer = Math.max(0, roarCooldownTimer - delta);
+                const btnRoar = document.getElementById('btnRoar');
+                if (btnRoar) {
+                    btnRoar.innerText = `叫び (${Math.ceil(roarCooldownTimer)}秒)`;
+                    btnRoar.disabled = true;
+                }
+            } else {
+                const btnRoar = document.getElementById('btnRoar');
+                if (btnRoar && btnRoar.disabled) {
+                    btnRoar.innerText = `叫び（スタン） 🗣️`;
+                    btnRoar.disabled = false;
+                }
+            }
+
+            // 死亡判定＆パタリと倒れるアニメーション
+            entities.forEach(e => {
+                if (e.hp <= 0) {
+                    e.isDead = true;
+                    // 徐々に倒れ込んで床に伏せる
+                    if (e.mesh.rotation.x > -Math.PI / 2) {
+                        e.mesh.rotation.x = Math.max(-Math.PI / 2, e.mesh.rotation.x - 0.1);
+                        e.mesh.position.y = Math.max(0.4, e.mesh.position.y - 0.05);
+                    }
+                }
+            });
+
             if (player.stunTimer > 0) player.stunTimer--;
             movePlayer();
 
-            // リコイル復元
+            // リコイルアニメーション
             if (recoilZ > 0) recoilZ = THREE.MathUtils.lerp(recoilZ, 0, 0.2);
             if (gunMesh) {
                 gunMesh.position.z = 0.4 - recoilZ;
@@ -545,21 +612,23 @@
                 if (muzzleFlashTimer <= 0 && muzzleFlash) muzzleFlash.visible = false;
             }
 
-            // 弾薬箱取得
-            ammoBoxes.forEach((box, idx) => {
-                if (player.mesh.position.distanceTo(box.position) < 1.2) {
-                    playerStats.reserveAmmo += 10;
-                    playSE(800, 'sine', 0.15);
-                    scene.remove(box);
-                    ammoBoxes.splice(idx, 1);
-                    updateHUD();
-                }
-            });
+            // 弾薬拾い判定
+            if (!player.isDead) {
+                ammoBoxes.forEach((box, idx) => {
+                    if (player.mesh.position.distanceTo(box.position) < 1.2) {
+                        playerStats.reserveAmmo += 10;
+                        playSE(800, 'sine', 0.15);
+                        scene.remove(box);
+                        ammoBoxes.splice(idx, 1);
+                        updateHUD();
+                    }
+                });
+            }
 
-            // NPC AI動作（追従・戦闘）
-            updateNPCs();
+            // NPC AI更新
+            if (gameStarted) updateNPCs();
 
-            // カメラ位置更新（三人称追従）
+            // 三人称追従カメラ
             const camDist = 6;
             camera.position.x = player.mesh.position.x + Math.sin(cameraAngleY) * camDist * Math.cos(cameraAngleX);
             camera.position.y = player.mesh.position.y + Math.sin(cameraAngleX) * camDist + 1;
@@ -571,17 +640,17 @@
             updateHUD();
         }
 
-        // NPC AI（障害物を避けてターゲットへ進む）
+        // NPC AI動作
         function updateNPCs() {
             entities.forEach(e => {
-                if (e.isPlayer || e.hp <= 0) return;
+                if (e.isPlayer || e.hp <= 0 || e.isDead) return;
                 if (e.stunTimer > 0) { e.stunTimer--; return; }
 
                 if (e.cooldown > 0) e.cooldown--;
 
                 let target = null, minDist = 999;
                 entities.forEach(other => {
-                    if (other.team !== e.team && other.hp > 0) {
+                    if (other.team !== e.team && other.hp > 0 && !other.isDead) {
                         let d = e.mesh.position.distanceTo(other.mesh.position);
                         if (d < minDist) { minDist = d; target = other; }
                     }
@@ -589,8 +658,6 @@
 
                 if (target) {
                     let dir = target.mesh.position.clone().sub(e.mesh.position).normalize();
-                    
-                    // X軸とZ軸を個別に動かして壁引っかかり（スタック）を自動回避
                     let moveX = dir.x * e.speed;
                     let moveZ = dir.z * e.speed;
 
@@ -602,7 +669,6 @@
 
                     e.mesh.rotation.y = Math.atan2(dir.x, dir.z);
 
-                    // 攻撃
                     if (minDist < 2.2 && e.cooldown === 0) {
                         target.hp -= (e.team === 'human') ? 18 : 10;
                         e.cooldown = 35;
@@ -612,7 +678,7 @@
         }
 
         function updateHUD() {
-            document.getElementById('hpInfo').innerText = `HP: ${Math.max(0, player.hp)}`;
+            document.getElementById('hpInfo').innerText = `HP: ${Math.max(0, player.hp)}${player.isDead ? ' (死亡)' : ''}`;
             if (playerTeam === 'human') {
                 document.getElementById('ammoInfo').innerText = `弾薬: ${playerStats.ammo} / ${playerStats.reserveAmmo}`;
             } else {
@@ -620,7 +686,6 @@
             }
         }
 
-        // マイクラ風はたく丸UI描画
         function drawFX() {
             const cvs = document.getElementById('fxCanvas');
             cvs.width = window.innerWidth; cvs.height = window.innerHeight;
