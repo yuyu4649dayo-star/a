@@ -2,61 +2,82 @@
 <html lang="ja">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>星キャッチゲーム - 難易度選択版</title>
+  <!-- ズーム（拡大縮小）を完全に禁止 -->
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>星キャッチゲーム - 決定版</title>
   <style>
+    /* 全要素でコピー・テキスト選択・タップハイライト・ズーム動作を禁止 */
+    * {
+      user-select: none;
+      -webkit-user-select: none;
+      -webkit-touch-callout: none;
+      touch-action: manipulation;
+      -webkit-tap-highlight-color: transparent;
+    }
+
     body {
       background-color: #1a1a2e;
       color: #fff;
       font-family: sans-serif;
       text-align: center;
       margin: 0;
-      padding: 15px;
+      padding: 10px;
+      overflow: hidden; /* スクロール防止 */
     }
+
     .info-panel {
       display: flex;
       justify-content: center;
-      gap: 20px;
-      font-size: 18px;
+      align-items: center;
+      gap: 15px;
+      font-size: 16px;
       font-weight: bold;
-      margin-bottom: 10px;
+      margin-bottom: 8px;
     }
+
     canvas {
       background-color: #16213e;
       border: 3px solid #e94560;
       border-radius: 10px;
       display: block;
-      margin: 10px auto;
-      touch-action: none;
+      margin: 0 auto;
     }
-    /* 難易度選択ボタンのデザイン */
+
     .mode-select {
-      margin: 15px 0;
+      margin: 8px 0;
       display: flex;
       justify-content: center;
-      gap: 10px;
+      gap: 6px;
       flex-wrap: wrap;
     }
-    .mode-btn {
-      font-size: 16px;
-      padding: 8px 16px;
+
+    .btn {
+      font-size: 14px;
+      padding: 8px 12px;
       background: #0f3460;
       color: white;
       border: 2px solid #e94560;
       border-radius: 6px;
       cursor: pointer;
     }
-    .mode-btn.active {
+
+    .btn.active {
       background: #e94560;
       font-weight: bold;
     }
-    /* 操作ボタン */
+
+    .btn-pause {
+      background: #f39c12;
+      border-color: #f1c40f;
+    }
+
     .controls {
       display: flex;
       justify-content: center;
       gap: 20px;
       margin-top: 10px;
     }
+
     .ctrl-btn {
       font-size: 20px;
       padding: 12px 35px;
@@ -65,23 +86,20 @@
       border: none;
       border-radius: 8px;
       cursor: pointer;
-      user-select: none;
-    }
-    .ctrl-btn:active {
-      background: #0f3460;
     }
   </style>
 </head>
-<body>
+<body oncontextmenu="return false;"> <!-- 右クリックメニュー禁止 -->
 
   <h1>⭐ 星キャッチゲーム</h1>
 
-  <!-- 難易度選択ボタン -->
+  <!-- 難易度 & 一時停止 -->
   <div class="mode-select">
-    <button class="mode-btn active" onclick="selectMode('easy', 5, this)">簡単 (猶予5)</button>
-    <button class="mode-btn" onclick="selectMode('normal', 3, this)">普通 (猶予3)</button>
-    <button class="mode-btn" onclick="selectMode('hard', 1, this)">むずい (猶予1)</button>
-    <button class="mode-btn" onclick="selectMode('extreme', 0, this)">激ムズ (即死)</button>
+    <button class="btn mode-btn active" onclick="selectMode('easy', 5, this)">簡単 (5)</button>
+    <button class="btn mode-btn" onclick="selectMode('normal', 3, this)">普通 (3)</button>
+    <button class="btn mode-btn" onclick="selectMode('hard', 1, this)">むずい (1)</button>
+    <button class="btn mode-btn" onclick="selectMode('extreme', 0, this)">激ムズ (即死)</button>
+    <button class="btn btn-pause" onclick="togglePause()">⏸️ 一時停止</button>
   </div>
 
   <!-- ステータス表示 -->
@@ -91,9 +109,9 @@
   </div>
 
   <!-- ゲーム画面 -->
-  <canvas id="gameCanvas" width="360" height="440"></canvas>
+  <canvas id="gameCanvas" width="360" height="420"></canvas>
 
-  <!-- タッチ操作用ボタン -->
+  <!-- タッチ操作ボタン -->
   <div class="controls">
     <button class="ctrl-btn" id="leftBtn">◀ 左</button>
     <button class="ctrl-btn" id="rightBtn">右 ▶</button>
@@ -109,8 +127,90 @@
     let maxLives = 5;
     let lives = 5;
     let isGameOver = false;
+    let isPaused = false;
 
-    // 1. プレイヤーデータ
+    // --- Web Audio API（サウンド機能） ---
+    let audioCtx = null;
+    let bgmInterval = null;
+    let audioUnlocked = false;
+
+    // オーディオ初期化（ユーザー操作でアンロック）
+    function initAudio() {
+      if (!audioCtx) {
+        audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      }
+      if (audioCtx.state === 'suspended') {
+        audioCtx.resume();
+      }
+      // スマホの音声合成（SpeechSynthesis）を初回アンロック
+      if ('speechSynthesis' in window && !audioUnlocked) {
+        const dummy = new SpeechSynthesisUtterance('');
+        window.speechSynthesis.speak(dummy);
+        audioUnlocked = true;
+      }
+    }
+
+    // 1. ピッ音（一時停止SE）
+    function playBeep() {
+      initAudio();
+      if (!audioCtx) return;
+      const osc = audioCtx.createOscillator();
+      const gain = audioCtx.createGain();
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(800, audioCtx.currentTime);
+      gain.gain.setValueAtTime(0.15, audioCtx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.08);
+      osc.connect(gain);
+      gain.connect(audioCtx.destination);
+      osc.start();
+      osc.stop(audioCtx.currentTime + 0.08);
+    }
+
+    // 2. 「Oh!」ボイス
+    function playOhVoice() {
+      initAudio();
+      if ('speechSynthesis' in window) {
+        window.speechSynthesis.cancel(); // 前の音声をクリア
+        const uttr = new SpeechSynthesisUtterance('Oh!');
+        uttr.lang = 'en-US';
+        uttr.pitch = 1.2;
+        uttr.rate = 1.1;
+        window.speechSynthesis.speak(uttr);
+      }
+    }
+
+    // 3. 試合中BGM（8bit風ポップピコピコ音）
+    const bgmNotes = [261.63, 329.63, 392.00, 523.25, 392.00, 329.63]; // C4, E4, G4, C5, G4, E4
+    let bgmStep = 0;
+
+    function startBGM() {
+      if (bgmInterval) return;
+      bgmInterval = setInterval(() => {
+        if (!isGameOver && !isPaused && audioCtx) {
+          const osc = audioCtx.createOscillator();
+          const gain = audioCtx.createGain();
+          osc.type = 'triangle'; // やわらかいレトロ音
+          osc.frequency.setValueAtTime(bgmNotes[bgmStep], audioCtx.currentTime);
+          gain.gain.setValueAtTime(0.03, audioCtx.currentTime);
+          gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.15);
+          osc.connect(gain);
+          gain.connect(audioCtx.destination);
+          osc.start();
+          osc.stop(audioCtx.currentTime + 0.15);
+
+          bgmStep = (bgmStep + 1) % bgmNotes.length;
+        }
+      }, 200);
+    }
+
+    function stopBGM() {
+      if (bgmInterval) {
+        clearInterval(bgmInterval);
+        bgmInterval = null;
+      }
+    }
+
+    // --- ゲームのオブジェクトデータ ---
     const player = {
       x: canvas.width / 2 - 30,
       y: canvas.height - 30,
@@ -120,7 +220,6 @@
       dx: 0
     };
 
-    // 2. 落ちてくる星データ
     const star = {
       x: Math.random() * (canvas.width - 30),
       y: 0,
@@ -128,28 +227,20 @@
       speed: 3.5
     };
 
-    // --- 「Oh！」ボイスを鳴らす関数 ---
-    function playOhVoice() {
-      if ('speechSynthesis' in window) {
-        window.speechSynthesis.cancel(); // 前の音声をキャンセル
-        const uttr = new SpeechSynthesisUtterance('Oh!');
-        uttr.lang = 'en-US'; // 英語発音
-        uttr.pitch = 1.3;    // 声の高さを少し高めに
-        uttr.rate = 1.2;     // 少し早めに「Oh!」
-        window.speechSynthesis.speak(uttr);
-      }
+    // 一時停止の切り替え
+    function togglePause() {
+      initAudio();
+      playBeep(); // 🔊 ピッ音
+      isPaused = !isPaused;
     }
 
-    // --- 難易度切り替え処理 ---
+    // 難易度選択
     function selectMode(mode, allowedMisses, btnElement) {
-      // ボタンの見た目更新
+      initAudio();
       document.querySelectorAll('.mode-btn').forEach(b => b.classList.remove('active'));
       btnElement.classList.add('active');
 
-      // 猶予（ライフ）設定
       maxLives = allowedMisses;
-      
-      // 難易度ごとに星の落ちるスピードも調整
       if (mode === 'easy') star.speed = 3;
       if (mode === 'normal') star.speed = 4;
       if (mode === 'hard') star.speed = 5.5;
@@ -158,29 +249,31 @@
       resetGame();
     }
 
-    // 画面のライフ表示を更新
     function updateLivesDisplay() {
       if (maxLives === 0) {
-        livesEl.textContent = '💀 1ミス即死';
+        livesEl.textContent = '💀 即死';
       } else {
         livesEl.textContent = '❤️'.repeat(lives) || '💀 0';
       }
     }
 
-    // リセット処理
     function resetGame() {
       score = 0;
       lives = maxLives;
       isGameOver = false;
+      isPaused = false;
       scoreEl.textContent = score;
       updateLivesDisplay();
       resetStar();
+      startBGM();
     }
 
-    // --- 操作設定 ---
+    // --- 操作イベント ---
     document.addEventListener('keydown', (e) => {
+      initAudio();
       if (e.key === 'ArrowLeft' || e.key === 'a') player.dx = -player.speed;
       if (e.key === 'ArrowRight' || e.key === 'd') player.dx = player.speed;
+      if (e.key === 'p' || e.key === 'P') togglePause();
       if (isGameOver && e.key === ' ') resetGame();
     });
 
@@ -190,8 +283,9 @@
 
     const leftBtn = document.getElementById('leftBtn');
     const rightBtn = document.getElementById('rightBtn');
-    const startLeft = (e) => { e.preventDefault(); player.dx = -player.speed; };
-    const startRight = (e) => { e.preventDefault(); player.dx = player.speed; };
+
+    const startLeft = (e) => { e.preventDefault(); initAudio(); player.dx = -player.speed; };
+    const startRight = (e) => { e.preventDefault(); initAudio(); player.dx = player.speed; };
     const stop = () => player.dx = 0;
 
     leftBtn.addEventListener('touchstart', startLeft);
@@ -204,23 +298,21 @@
     rightBtn.addEventListener('mousedown', startRight);
     rightBtn.addEventListener('mouseup', stop);
 
-    // スマホ等のタッチでリトライできるようにする
     canvas.addEventListener('click', () => {
+      initAudio();
       if (isGameOver) resetGame();
     });
 
-    // --- メインゲームループ ---
+    // --- メインループ ---
     function update() {
-      if (!isGameOver) {
-        // プレイヤー移動
+      if (!isGameOver && !isPaused) {
         player.x += player.dx;
         if (player.x < 0) player.x = 0;
         if (player.x + player.width > canvas.width) player.x = canvas.width - player.width;
 
-        // 星移動
         star.y += star.speed;
 
-        // 当たり判定（キャッチ成功）
+        // キャッチ判定
         if (
           star.y + star.size >= player.y &&
           star.x + star.size >= player.x &&
@@ -231,12 +323,11 @@
           resetStar();
         }
 
-        // ミス判定（下に落ちた）
+        // ミス判定
         if (star.y > canvas.height) {
-          playOhVoice(); // 🔊 「Oh！」ボイスを再生！
+          playOhVoice(); // 🔊 「Oh！」ボイスを発声
 
           if (maxLives === 0) {
-            // 激ムズ（1回で終了）
             isGameOver = true;
           } else {
             lives--;
@@ -259,7 +350,7 @@
       star.x = Math.random() * (canvas.width - star.size);
     }
 
-    // --- 描画処理 ---
+    // --- 描画 ---
     function draw() {
       ctx.clearRect(0, 0, canvas.width, canvas.height);
 
@@ -273,9 +364,28 @@
         ctx.fillText('⭐', star.x, star.y + star.size);
       }
 
-      // ゲームオーバー画面
+      // 1. 一時停止（ポーズ）画面
+      if (isPaused && !isGameOver) {
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+        ctx.fillStyle = '#f1c40f';
+        ctx.font = 'bold 28px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText('⏸️ 一時停止中', canvas.width / 2, canvas.height / 2 - 30);
+
+        ctx.fillStyle = '#fff';
+        ctx.font = 'bold 20px sans-serif';
+        ctx.fillText(`現在のスコア: ${score}点`, canvas.width / 2, canvas.height / 2 + 15);
+
+        ctx.font = '14px sans-serif';
+        ctx.fillText('「一時停止」ボタンを押すと再開', canvas.width / 2, canvas.height / 2 + 55);
+        ctx.textAlign = 'left';
+      }
+
+      // 2. ゲームオーバー画面
       if (isGameOver) {
-        ctx.fillStyle = 'rgba(0, 0, 0, 0.75)';
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.8)';
         ctx.fillRect(0, 0, canvas.width, canvas.height);
 
         ctx.fillStyle = '#e94560';
@@ -286,12 +396,12 @@
         ctx.fillStyle = '#fff';
         ctx.font = '16px sans-serif';
         ctx.fillText(`最終スコア: ${score}点`, canvas.width / 2, canvas.height / 2 + 20);
-        ctx.fillText('画面タップかボタンでリトライ', canvas.width / 2, canvas.height / 2 + 50);
+        ctx.fillText('画面タップでリトライ', canvas.width / 2, canvas.height / 2 + 50);
         ctx.textAlign = 'left';
       }
     }
 
-    // 初期化と開始
+    // 開始
     updateLivesDisplay();
     update();
   </script>
