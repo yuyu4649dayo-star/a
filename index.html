@@ -2,14 +2,19 @@
 <html lang="ja">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>3D Zombie 5v5 Survival</title>
     <style>
         * {
             margin: 0; padding: 0; box-sizing: border-box;
             user-select: none; -webkit-user-select: none;
+            touch-action: none; /* タッチによる画面ズレ・スクロール防止 */
         }
-        body, html { width: 100%; height: 100%; overflow: hidden; background: #000; font-family: sans-serif; }
+        body, html {
+            width: 100%; height: 100%; overflow: hidden;
+            position: fixed; top: 0; left: 0;
+            background: #000; font-family: sans-serif;
+        }
         
         /* 1. 陣営選択画面 */
         #select-screen {
@@ -84,6 +89,9 @@
     <canvas id="fxCanvas"></canvas>
 
     <script>
+        // 画面揺れ・不要なスクロールをブラウザ全体でシャットアウト
+        document.addEventListener('touchmove', (e) => e.preventDefault(), { passive: false });
+
         // --- 効果音再生 (Web Audio API) ---
         const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
         function playSE(freq = 600, type = 'sine', duration = 0.1) {
@@ -101,13 +109,17 @@
         // --- ゲームステート ---
         let playerTeam = 'human';
         let scene, camera, renderer;
-        let player, playerBody;
+        let player, playerBody, gunMesh, muzzleFlash;
         let entities = [];
         let ammoBoxes = [];
         let obstacles = [];
         
         let playerStats = { hp: 100, maxHp: 100, ammo: 10, reserveAmmo: 20, isStunned: false, stunTimer: 0 };
         let cameraAngleY = 0, cameraAngleX = 0.3;
+
+        // 銃のリコイル・発射エフェクト用変数
+        let recoilZ = 0;
+        let muzzleFlashTimer = 0;
 
         // タッチ操作用
         let dpadInput = { x: 0, y: 0 };
@@ -168,7 +180,7 @@
             // 障害物（壁）生成
             createObstacles();
 
-            // 散らばる弾薬箱生成
+            // マップ上の弾薬箱（数を大幅に減らして2個のみ配置）
             createAmmoBoxes();
 
             // 5vs5 キャラクターの生成
@@ -203,7 +215,6 @@
                 mesh.position.set(data.x, data.h / 2, data.z);
                 scene.add(mesh);
 
-                // 衝突判定用BoundingBox
                 mesh.geometry.computeBoundingBox();
                 obstacles.push({
                     box: new THREE.Box3().setFromObject(mesh),
@@ -212,11 +223,11 @@
             });
         }
 
-        // マップ上に散らばる弾薬箱
+        // マップ上に散らばる弾薬箱（ご要望により5個から2個に削減）
         function createAmmoBoxes() {
             const mat = new THREE.MeshStandardMaterial({ color: 0xffcc00 });
             const positions = [
-                { x: -8, z: -2 }, { x: 8, z: -2 }, { x: 0, z: 10 }, { x: -10, z: 18 }, { x: 10, z: -18 }
+                { x: -5, z: 0 }, { x: 5, z: 5 }
             ];
             positions.forEach(pos => {
                 const geo = new THREE.BoxGeometry(0.8, 0.6, 0.8);
@@ -229,16 +240,19 @@
 
         // 5vs5 スポーン処理
         function spawnEntities() {
-            // 人間NPCは強力、ゾンビはやや弱めに調整
             const humanMat = new THREE.MeshStandardMaterial({ color: 0x2196f3 });
             const zombieMat = new THREE.MeshStandardMaterial({ color: 0x4caf50 });
 
-            // プレイヤー作成
             const isPlayerHuman = (playerTeam === 'human');
             const pGeo = new THREE.CylinderGeometry(0.5, 0.5, 1.8);
             playerBody = new THREE.Mesh(pGeo, isPlayerHuman ? humanMat : zombieMat);
             playerBody.position.set(0, 0.9, 15);
             scene.add(playerBody);
+
+            // 人間の場合、手に銃のモデルを装備
+            if (isPlayerHuman) {
+                attachGunToPlayer();
+            }
 
             player = {
                 mesh: playerBody, isPlayer: true, team: playerTeam,
@@ -251,7 +265,6 @@
                 const isHuman = (i < 4) ? isPlayerHuman : !isPlayerHuman;
                 const mesh = new THREE.Mesh(pGeo, isHuman ? humanMat : zombieMat);
                 
-                // 初期位置
                 const spawnZ = isHuman ? 12 + Math.random()*4 : -12 - Math.random()*4;
                 const spawnX = (Math.random() - 0.5) * 20;
                 mesh.position.set(spawnX, 0.9, spawnZ);
@@ -259,11 +272,34 @@
 
                 entities.push({
                     mesh: mesh, isPlayer: false, team: isHuman ? 'human' : 'zombie',
-                    // バランス調整: 人間NPCは高HP&高威力、ゾンビは抑えめ
                     hp: isHuman ? 140 : 40, maxHp: isHuman ? 140 : 40,
                     speed: isHuman ? 0.08 : 0.06, cooldown: 0, stunTimer: 0
                 });
             }
+        }
+
+        // 銃モデルの作成と装備
+        function attachGunToPlayer() {
+            const gunGroup = new THREE.Group();
+            
+            // ピストルのボディ
+            const gunBodyGeo = new THREE.BoxGeometry(0.12, 0.18, 0.5);
+            const gunMat = new THREE.MeshStandardMaterial({ color: 0x111111 });
+            const gunBody = new THREE.Mesh(gunBodyGeo, gunMat);
+            gunGroup.add(gunBody);
+
+            // 銃口のマズルフラッシュ（発射時の光）
+            const flashGeo = new THREE.SphereGeometry(0.15, 8, 8);
+            const flashMat = new THREE.MeshBasicMaterial({ color: 0xffaa00 });
+            muzzleFlash = new THREE.Mesh(flashGeo, flashMat);
+            muzzleFlash.position.set(0, 0.05, 0.35);
+            muzzleFlash.visible = false;
+            gunGroup.add(muzzleFlash);
+
+            // プレイヤー体の右前方に配置
+            gunGroup.position.set(0.35, 0.2, 0.4);
+            playerBody.add(gunGroup);
+            gunMesh = gunGroup;
         }
 
         // HUDのアクションボタン生成
@@ -287,68 +323,90 @@
             }
         }
 
-        // --- すり抜け防止（障害物の当たり判定） ---
+        // すり抜け防止（障害物の当たり判定）
         function checkObstacleCollision(newPos, radius = 0.5) {
             for (let obs of obstacles) {
-                // 簡易球とAABBのめり込みチェック
                 const box = obs.box;
                 const closestX = Math.max(box.min.x, Math.min(newPos.x, box.max.x));
                 const closestZ = Math.max(box.min.z, Math.min(newPos.z, box.max.z));
                 const distX = newPos.x - closestX;
                 const distZ = newPos.z - closestZ;
                 if ((distX * distX + distZ * distZ) < (radius * radius)) {
-                    return true; // ぶつかっている
+                    return true;
                 }
             }
             return false;
         }
 
-        // プレイヤー移動処理（すり抜け防止付き）
+        // プレイヤー移動処理
         function movePlayer() {
-            if (player.stunTimer > 0) return; // スタン中
+            if (player.stunTimer > 0) return;
 
             let moveX = 0, moveZ = 0;
             if (Math.abs(dpadInput.x) > 0.1 || Math.abs(dpadInput.y) > 0.1) {
-                // カメラの向きに合わせた移動
                 const sin = Math.sin(cameraAngleY);
                 const cos = Math.cos(cameraAngleY);
                 moveX = (dpadInput.x * cos - dpadInput.y * sin) * player.speed;
                 moveZ = (dpadInput.x * sin + dpadInput.y * cos) * player.speed;
             }
 
-            // X軸移動チェック
             let nextPos = player.mesh.position.clone();
             nextPos.x += moveX;
             if (!checkObstacleCollision(nextPos)) player.mesh.position.x = nextPos.x;
 
-            // Z軸移動チェック
             nextPos = player.mesh.position.clone();
             nextPos.z += moveZ;
             if (!checkObstacleCollision(nextPos)) player.mesh.position.z = nextPos.z;
 
-            // プレイヤーの体の向き
             if (moveX !== 0 || moveZ !== 0) {
                 player.mesh.rotation.y = Math.atan2(moveX, moveZ);
             }
         }
 
-        // 人間アクション：射撃
+        // 人間アクション：射撃（反動＆マズルフラッシュ付き）
         function humanShoot() {
             if (playerStats.ammo <= 0) { playSE(200, 'sawtooth', 0.1); return; }
             playerStats.ammo--;
             playSE(900, 'square', 0.08);
             updateHUD();
 
-            // 前方の敵にヒット判定
-            const dir = new THREE.Vector3(Math.sin(player.mesh.rotation.y), 0, Math.cos(player.mesh.rotation.y));
+            // 1. 銃の反動（リコイル）を設定
+            recoilZ = 0.25;
+
+            // 2. マズルフラッシュ表示
+            if (muzzleFlash) {
+                muzzleFlash.visible = true;
+                muzzleFlashTimer = 3; // 3フレーム点灯
+            }
+
+            // 3. 弾道トレーサー線（光の筋）のエフェクト描画
+            createBulletTracer();
+
+            // 4. 敵ヒット判定
             entities.forEach(e => {
                 if (e.team !== 'human' && e.hp > 0) {
                     const dist = player.mesh.position.distanceTo(e.mesh.position);
                     if (dist < 15) {
-                        e.hp -= 25; // ピストルダメージ
+                        e.hp -= 25;
                     }
                 }
             });
+        }
+
+        // 弾道エフェクト線
+        function createBulletTracer() {
+            const start = player.mesh.position.clone().add(new THREE.Vector3(0, 1.1, 0));
+            const dir = new THREE.Vector3(Math.sin(player.mesh.rotation.y), 0, Math.cos(player.mesh.rotation.y));
+            const end = start.clone().add(dir.multiplyScalar(15));
+
+            const points = [start, end];
+            const geo = new THREE.BufferGeometry().setFromPoints(points);
+            const mat = new THREE.LineBasicMaterial({ color: 0xffea00 });
+            const line = new THREE.Line(geo, mat);
+            scene.add(line);
+
+            // 一瞬で消失
+            setTimeout(() => scene.remove(line), 50);
         }
 
         // 人間アクション：リロード
@@ -362,21 +420,18 @@
             updateHUD();
         }
 
-        // 人間アクション：殴り/蹴り
         function humanPunch() { playSE(500, 'triangle', 0.1); meleeAttack(15, 2.5); }
         function humanKick() { playSE(300, 'triangle', 0.15); meleeAttack(25, 3.0); }
 
-        // ゾンビアクション
         function zombieBite() { playSE(250, 'sawtooth', 0.15); meleeAttack(30, 2.0); }
         function zombieScratch() { playSE(400, 'sawtooth', 0.1); meleeAttack(18, 2.5); }
         
-        // ゾンビアクション：叫び（周囲を1.5秒停止）
         function zombieRoar() {
             playSE(150, 'sawtooth', 0.4);
             entities.forEach(e => {
                 if (e.team === 'human' && e.hp > 0) {
                     if (player.mesh.position.distanceTo(e.mesh.position) < 8) {
-                        e.stunTimer = 90; // 約1.5秒間スタン
+                        e.stunTimer = 90;
                     }
                 }
             });
@@ -396,12 +451,10 @@
         function setupTouchControls() {
             window.addEventListener('touchstart', (e) => {
                 for (let t of e.changedTouches) {
-                    // 左下：十字キー
                     if (t.clientX < window.innerWidth / 2 && touchDpadId === null) {
                         touchDpadId = t.identifier;
                         updateDpad(t.clientX, t.clientY);
                     } 
-                    // 右側：視点操作 ＆ はたく円エフェクト
                     else if (t.clientX >= window.innerWidth / 2 && touchLookId === null) {
                         touchLookId = t.identifier;
                         lastTouchX = t.clientX; lastTouchY = t.clientY;
@@ -409,7 +462,7 @@
                         playSE(700, 'sine', 0.05);
                     }
                 }
-            });
+            }, { passive: false });
 
             window.addEventListener('touchmove', (e) => {
                 for (let t of e.changedTouches) {
@@ -423,7 +476,7 @@
                         hitRing.x = t.clientX; hitRing.y = t.clientY;
                     }
                 }
-            });
+            }, { passive: false });
 
             const resetTouch = (e) => {
                 for (let t of e.changedTouches) {
@@ -449,9 +502,23 @@
         function animate() {
             requestAnimationFrame(animate);
 
-            // プレイヤー更新
             if (player.stunTimer > 0) player.stunTimer--;
             movePlayer();
+
+            // 銃のリコイル復元計算（スムーズに元の位置に戻る）
+            if (recoilZ > 0) {
+                recoilZ = THREE.MathUtils.lerp(recoilZ, 0, 0.2);
+            }
+            if (gunMesh) {
+                gunMesh.position.z = 0.4 - recoilZ;
+                gunMesh.rotation.x = recoilZ * 1.5; // 少し上にも跳ね上がる
+            }
+
+            // マズルフラッシュ消灯タイマー
+            if (muzzleFlashTimer > 0) {
+                muzzleFlashTimer--;
+                if (muzzleFlashTimer <= 0 && muzzleFlash) muzzleFlash.visible = false;
+            }
 
             // 弾薬箱拾い判定
             ammoBoxes.forEach((box, idx) => {
@@ -467,7 +534,7 @@
             // NPC AI更新
             updateNPCs();
 
-            // カメラ追従（三人称後方視点）
+            // 三人称後方カメラ追従
             const camDist = 6;
             camera.position.x = player.mesh.position.x - Math.sin(cameraAngleY) * camDist * Math.cos(cameraAngleX);
             camera.position.y = player.mesh.position.y + Math.sin(cameraAngleX) * camDist + 1;
@@ -487,7 +554,6 @@
 
                 if (e.cooldown > 0) e.cooldown--;
 
-                // 一番近い敵をターゲット
                 let target = null, minDist = 999;
                 entities.forEach(other => {
                     if (other.team !== e.team && other.hp > 0) {
@@ -497,7 +563,6 @@
                 });
 
                 if (target) {
-                    // ターゲットに向かって移動
                     let dir = target.mesh.position.clone().sub(e.mesh.position).normalize();
                     let nextPos = e.mesh.position.clone().add(dir.multiplyScalar(e.speed));
                     if (!checkObstacleCollision(nextPos)) {
@@ -505,9 +570,8 @@
                     }
                     e.mesh.rotation.y = Math.atan2(dir.x, dir.z);
 
-                    // 攻撃
                     if (minDist < 2.0 && e.cooldown === 0) {
-                        target.hp -= (e.team === 'human') ? 20 : 8; // 人間NPCは強く調整
+                        target.hp -= (e.team === 'human') ? 20 : 8;
                         e.cooldown = 40;
                     }
                 }
