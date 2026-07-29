@@ -53,6 +53,37 @@
             display: none; pointer-events: none; z-index: 30;
         }
 
+        /* 死亡画面UI */
+        #death-screen {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0, 0, 0, 0.75);
+            display: none; flex-direction: column; justify-content: center; align-items: center;
+            z-index: 50; pointer-events: auto;
+        }
+        #death-screen h1 {
+            font-size: 64px; color: #ff1744; margin-bottom: 30px; font-weight: 900;
+            text-shadow: 0 0 20px #f00, 0 0 40px #900; letter-spacing: 4px;
+        }
+        .death-btns { display: flex; flex-direction: column; gap: 15px; width: 220px; }
+        .death-btn {
+            padding: 15px 20px; font-size: 18px; font-weight: bold; color: #fff;
+            background: rgba(255, 255, 255, 0.15); border: 2px solid #fff; border-radius: 25px;
+            cursor: pointer; transition: background 0.2s; text-align: center;
+        }
+        .death-btn:active { background: rgba(255, 255, 255, 0.4); }
+
+        /* 勝敗結果テロップ */
+        #result-banner {
+            position: absolute; top: 35%; left: 50%; transform: translate(-50%, -50%);
+            text-align: center; display: none; z-index: 60; pointer-events: none; width: 100%;
+        }
+
+        /* 観戦モードコントロール */
+        #spectate-hud {
+            position: absolute; bottom: 30px; left: 50%; transform: translateX(-50%);
+            display: none; pointer-events: auto; z-index: 40;
+        }
+
         /* 十字キーUI */
         #dpad-base {
             position: absolute; bottom: 30px; left: 30px;
@@ -78,7 +109,6 @@
         .act-btn:disabled { opacity: 0.5; cursor: not-allowed; }
         .act-btn:active:not(:disabled) { background: rgba(255,255,255,0.4); }
 
-        /* マイクラ風はたく丸UI Canvas */
         #fxCanvas { position: absolute; top:0; left:0; width:100%; height:100%; pointer-events: none; z-index: 20; }
     </style>
     <!-- Three.js CDN -->
@@ -111,7 +141,7 @@
 
         <div id="countdown-display">5</div>
 
-        <!-- バーチャル十字キーUI -->
+        <!-- 十字キーUI -->
         <div id="dpad-base">
             <div id="dpad-knob"></div>
         </div>
@@ -119,12 +149,29 @@
         <div class="action-btns" id="actionContainer"></div>
     </div>
 
+    <!-- 死亡画面UI -->
+    <div id="death-screen">
+        <h1>死んだ！</h1>
+        <div class="death-btns">
+            <button class="death-btn" onclick="startSpectator()">観戦する 👁️</button>
+            <button class="death-btn" onclick="resetToHome()">ホーム画面に戻る 🏠</button>
+        </div>
+    </div>
+
+    <!-- 勝敗結果画面 -->
+    <div id="result-banner"></div>
+
+    <!-- 観戦切り替えボタン -->
+    <div id="spectate-hud">
+        <button class="act-btn" onclick="nextSpectateTarget()">視点切り替え 👁️</button>
+    </div>
+
     <canvas id="fxCanvas"></canvas>
 
     <script>
         document.addEventListener('touchmove', (e) => e.preventDefault(), { passive: false });
 
-        // --- 効果音再生 (Web Audio API) ---
+        // --- 効果音再生 ---
         const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
         function playSE(freq = 600, type = 'sine', duration = 0.1) {
             if (audioCtx.state === 'suspended') audioCtx.resume();
@@ -149,22 +196,24 @@
         let playerStats = { hp: 100, maxHp: 100, ammo: 10, reserveAmmo: 20, isStunned: false, stunTimer: 0 };
         let cameraAngleY = 0, cameraAngleX = 0.3;
 
-        // クールダウン ＆ カウントダウン管理
         let gameStarted = false;
-        let roarCooldownTimer = 0; // 秒数管理
+        let gameEnded = false;
+        let isSpectating = false;
+        let spectateIndex = 0;
+        let deathScreenShown = false;
+
+        let roarCooldownTimer = 0;
         let lastTime = performance.now();
 
-        // 銃のリコイル・発射エフェクト用
         let recoilZ = 0;
         let muzzleFlashTimer = 0;
 
-        // タッチ操作用
         let dpadInput = { x: 0, y: 0 };
         let touchDpadId = null, touchLookId = null;
         let lastTouchX = 0, lastTouchY = 0;
         let hitRing = { active: false, x: 0, y: 0, progress: 0 };
 
-        // 1. 陣営選択 ＆ ロード画面
+        // 1. 陣営選択 ＆ ロード
         function selectTeam(team) {
             playSE(800, 'square', 0.15);
             playerTeam = team;
@@ -186,9 +235,24 @@
 
         // 2. 3Dゲーム初期化
         function initGame() {
+            // 変数初期化
+            entities = []; ammoBoxes = []; obstacles = [];
+            gameStarted = false; gameEnded = false; isSpectating = false; deathScreenShown = false;
+            roarCooldownTimer = 0; playerStats.ammo = 10; playerStats.reserveAmmo = 20;
+
             document.getElementById('game-hud').style.display = 'block';
+            document.getElementById('death-screen').style.display = 'none';
+            document.getElementById('result-banner').style.display = 'none';
+            document.getElementById('spectate-hud').style.display = 'none';
+            document.getElementById('dpad-base').style.display = 'block';
+            document.getElementById('actionContainer').style.display = 'flex';
             document.getElementById('teamInfo').innerText = `陣営: ${playerTeam === 'human' ? '人間' : 'ゾンビ'}`;
+            
             setupHUDButtons();
+
+            if (renderer) {
+                renderer.domElement.remove();
+            }
 
             scene = new THREE.Scene();
             scene.background = new THREE.Color(0x111115);
@@ -205,7 +269,6 @@
             dirLight.position.set(20, 40, 20);
             scene.add(dirLight);
 
-            // 床
             const floorGeo = new THREE.PlaneGeometry(100, 100);
             const floorMat = new THREE.MeshStandardMaterial({ color: 0x222225 });
             const floor = new THREE.Mesh(floorGeo, floorMat);
@@ -214,10 +277,7 @@
 
             createObstacles();
             createAmmoBoxes();
-
-            // 5人横並びで整列スポーン
             spawnEntities();
-
             setupTouchControls();
 
             window.addEventListener('resize', () => {
@@ -226,16 +286,13 @@
                 renderer.setSize(window.innerWidth, window.innerHeight);
             });
 
-            // 5秒カウントダウン開始
             startCountdown();
-
             lastTime = performance.now();
             animate();
         }
 
-        // カウントダウン処理（5 -> 4 -> 3 -> 2 -> 1 -> スタート！）
+        // 5秒カウントダウン
         function startCountdown() {
-            gameStarted = false;
             let count = 5;
             const display = document.getElementById('countdown-display');
             display.style.display = 'block';
@@ -292,56 +349,53 @@
             });
         }
 
-        // 5人横並びスポーン処理
+        // スポーン処理
         function spawnEntities() {
             const humanMat = new THREE.MeshStandardMaterial({ color: 0x2196f3 });
             const zombieMat = new THREE.MeshStandardMaterial({ color: 0x4caf50 });
             const isPlayerHuman = (playerTeam === 'human');
             const pGeo = new THREE.CylinderGeometry(0.5, 0.5, 1.8);
-
-            // 横並びの座標 (X軸方向に5人並べる)
             const spawnXs = [-8, -4, 0, 4, 8];
 
-            // 1. 人間チーム生成 (Z = 18 のライン)
-            let hSlot = 0;
+            // 1. 人間チーム生成 (移動速度を適正化: 0.08)
             for (let i = 0; i < 5; i++) {
                 const mesh = new THREE.Mesh(pGeo, humanMat);
                 mesh.position.set(spawnXs[i], 0.9, 18);
                 scene.add(mesh);
 
-                if (isPlayerHuman && i === 2) { // プレイヤーは中央に配置
+                if (isPlayerHuman && i === 2) {
                     playerBody = mesh;
                     attachGunToPlayer();
                     player = {
                         mesh: playerBody, isPlayer: true, team: 'human',
-                        hp: 100, maxHp: 100, speed: 0.06, stunTimer: 0, isDead: false
+                        hp: 100, maxHp: 100, speed: 0.10, stunTimer: 0, isDead: false
                     };
                     entities.push(player);
                 } else {
                     entities.push({
                         mesh: mesh, isPlayer: false, team: 'human',
-                        hp: 120, maxHp: 120, speed: 0.04, cooldown: 0, stunTimer: 0, isDead: false
+                        hp: 120, maxHp: 120, speed: 0.08, cooldown: 0, stunTimer: 0, isDead: false
                     });
                 }
             }
 
-            // 2. ゾンビチーム生成 (Z = -18 のライン)
+            // 2. ゾンビチーム生成 (移動速度を適正化: 0.085)
             for (let i = 0; i < 5; i++) {
                 const mesh = new THREE.Mesh(pGeo, zombieMat);
                 mesh.position.set(spawnXs[i], 0.9, -18);
                 scene.add(mesh);
 
-                if (!isPlayerHuman && i === 2) { // プレイヤーは中央に配置
+                if (!isPlayerHuman && i === 2) {
                     playerBody = mesh;
                     player = {
                         mesh: playerBody, isPlayer: true, team: 'zombie',
-                        hp: 100, maxHp: 100, speed: 0.06, stunTimer: 0, isDead: false
+                        hp: 100, maxHp: 100, speed: 0.10, stunTimer: 0, isDead: false
                     };
                     entities.push(player);
                 } else {
                     entities.push({
                         mesh: mesh, isPlayer: false, team: 'zombie',
-                        hp: 60, maxHp: 60, speed: 0.045, cooldown: 0, stunTimer: 0, isDead: false
+                        hp: 60, maxHp: 60, speed: 0.085, cooldown: 0, stunTimer: 0, isDead: false
                     });
                 }
             }
@@ -424,6 +478,7 @@
             }
         }
 
+        // 射撃（1体のみヒットするように不具合修正）
         function humanShoot() {
             if (!gameStarted || player.isDead || playerStats.ammo <= 0) { playSE(200, 'sawtooth', 0.1); return; }
             playerStats.ammo--;
@@ -434,12 +489,32 @@
             if (muzzleFlash) { muzzleFlash.visible = true; muzzleFlashTimer = 3; }
             createBulletTracer();
 
+            // プレイヤーの前方にある「最も近い1体」だけを探して攻撃
+            const pPos = player.mesh.position;
+            const forward = new THREE.Vector3(Math.sin(player.mesh.rotation.y), 0, Math.cos(player.mesh.rotation.y)).normalize();
+
+            let targetEnemy = null;
+            let minDistance = 15; // 射程
+
             entities.forEach(e => {
                 if (e.team !== 'human' && e.hp > 0 && !e.isDead) {
-                    const dist = player.mesh.position.distanceTo(e.mesh.position);
-                    if (dist < 15) e.hp -= 25;
+                    const toEnemy = e.mesh.position.clone().sub(pPos);
+                    const dist = toEnemy.length();
+                    if (dist < minDistance) {
+                        // 前方約30度以内かチェック
+                        const angle = forward.angleTo(toEnemy.clone().normalize());
+                        if (angle < 0.5) {
+                            minDistance = dist;
+                            targetEnemy = e;
+                        }
+                    }
                 }
             });
+
+            // 1体のみダメージ
+            if (targetEnemy) {
+                targetEnemy.hp -= 35;
+            }
         }
 
         function createBulletTracer() {
@@ -471,11 +546,9 @@
         function zombieBite() { if (gameStarted && !player.isDead) { playSE(250, 'sawtooth', 0.15); meleeAttack(30, 2.0); } }
         function zombieScratch() { if (gameStarted && !player.isDead) { playSE(400, 'sawtooth', 0.1); meleeAttack(18, 2.5); } }
         
-        // 1分間（60秒）に1回制限の叫び
         function zombieRoar() {
             if (!gameStarted || player.isDead || roarCooldownTimer > 0) return;
-            
-            roarCooldownTimer = 60; // 60秒のクールダウンをセット
+            roarCooldownTimer = 60;
             playSE(150, 'sawtooth', 0.4);
 
             entities.forEach(e => {
@@ -493,6 +566,61 @@
                     if (player.mesh.position.distanceTo(e.mesh.position) < range) e.hp -= dmg;
                 }
             });
+        }
+
+        // 観戦モード開始
+        function startSpectator() {
+            document.getElementById('death-screen').style.display = 'none';
+            document.getElementById('spectate-hud').style.display = 'block';
+            document.getElementById('dpad-base').style.display = 'none';
+            document.getElementById('actionContainer').style.display = 'none';
+            isSpectating = true;
+        }
+
+        // 観戦対象切り替え
+        function nextSpectateTarget() {
+            spectateIndex++;
+            playSE(700, 'sine', 0.08);
+        }
+
+        // ホーム画面に戻る（リセット）
+        function resetToHome() {
+            location.reload(); // 確実にクリーンリセット
+        }
+
+        // 勝敗判定チェック
+        function checkGameEnd() {
+            if (gameEnded) return;
+
+            const aliveHumans = entities.filter(e => e.team === 'human' && e.hp > 0 && !e.isDead).length;
+            const aliveZombies = entities.filter(e => e.team === 'zombie' && e.hp > 0 && !e.isDead).length;
+
+            if (aliveHumans === 0 || aliveZombies === 0) {
+                gameEnded = true;
+                const winText = aliveHumans > 0 ? "People Win!" : "Zombie Win!";
+                showResultBanner(winText);
+            }
+        }
+
+        // 勝敗結果テロップ ＆ 5秒カウントダウン自動ホーム復帰
+        function showResultBanner(text) {
+            const banner = document.getElementById('result-banner');
+            banner.style.display = 'block';
+            banner.innerHTML = `
+                <div style="font-size: 56px; color: #ffeb3b; font-weight: bold; text-shadow: 0 0 20px #000, 0 0 10px #f00;">${text}</div>
+                <div id="return-msg" style="font-size: 20px; color: #fff; margin-top: 15px; font-weight: bold;">5秒後に自動でホームへ戻ります...</div>
+            `;
+
+            let count = 5;
+            const interval = setInterval(() => {
+                count--;
+                const msg = document.getElementById('return-msg');
+                if (msg) msg.innerText = `${count}秒後に自動でホームへ戻ります...`;
+                if (count <= 0) {
+                    clearInterval(interval);
+                    resetToHome();
+                }
+            }, 1000);
         }
 
         function setupTouchControls() {
@@ -564,12 +692,11 @@
         function animate() {
             requestAnimationFrame(animate);
 
-            // デルタタイム計算（秒単位のタイマー用）
             const now = performance.now();
             const delta = (now - lastTime) / 1000;
             lastTime = now;
 
-            // 「叫び」のクールダウン計算 ＆ ボタンテキスト更新
+            // 「叫び」のクールダウン計算
             if (roarCooldownTimer > 0) {
                 roarCooldownTimer = Math.max(0, roarCooldownTimer - delta);
                 const btnRoar = document.getElementById('btnRoar');
@@ -585,11 +712,10 @@
                 }
             }
 
-            // 死亡判定＆パタリと倒れるアニメーション
+            // 死亡アニメーション ＆ 死亡時UI表示
             entities.forEach(e => {
                 if (e.hp <= 0) {
                     e.isDead = true;
-                    // 徐々に倒れ込んで床に伏せる
                     if (e.mesh.rotation.x > -Math.PI / 2) {
                         e.mesh.rotation.x = Math.max(-Math.PI / 2, e.mesh.rotation.x - 0.1);
                         e.mesh.position.y = Math.max(0.4, e.mesh.position.y - 0.05);
@@ -597,10 +723,16 @@
                 }
             });
 
+            // プレイヤーが死んだら死亡UIを表示（観戦中・ゲーム終了時除く）
+            if (player.isDead && !isSpectating && !deathScreenShown && !gameEnded) {
+                deathScreenShown = true;
+                document.getElementById('death-screen').style.display = 'flex';
+            }
+
             if (player.stunTimer > 0) player.stunTimer--;
             movePlayer();
 
-            // リコイルアニメーション
+            // リコイル復元
             if (recoilZ > 0) recoilZ = THREE.MathUtils.lerp(recoilZ, 0, 0.2);
             if (gunMesh) {
                 gunMesh.position.z = 0.4 - recoilZ;
@@ -612,7 +744,7 @@
                 if (muzzleFlashTimer <= 0 && muzzleFlash) muzzleFlash.visible = false;
             }
 
-            // 弾薬拾い判定
+            // 弾薬箱取得
             if (!player.isDead) {
                 ammoBoxes.forEach((box, idx) => {
                     if (player.mesh.position.distanceTo(box.position) < 1.2) {
@@ -625,22 +757,35 @@
                 });
             }
 
-            // NPC AI更新
-            if (gameStarted) updateNPCs();
+            // NPC AI動作 ＆ 勝敗判定
+            if (gameStarted) {
+                updateNPCs();
+                checkGameEnd();
+            }
 
-            // 三人称追従カメラ
+            // カメラ制御 (通常 or 観戦スペクテイターモード)
             const camDist = 6;
-            camera.position.x = player.mesh.position.x + Math.sin(cameraAngleY) * camDist * Math.cos(cameraAngleX);
-            camera.position.y = player.mesh.position.y + Math.sin(cameraAngleX) * camDist + 1;
-            camera.position.z = player.mesh.position.z + Math.cos(cameraAngleY) * camDist * Math.cos(cameraAngleX);
-            camera.lookAt(player.mesh.position.x, player.mesh.position.y + 1, player.mesh.position.z);
+            let camTargetPos = player.mesh.position;
+
+            if (isSpectating) {
+                const aliveEntities = entities.filter(e => e.hp > 0 && !e.isDead);
+                if (aliveEntities.length > 0) {
+                    const target = aliveEntities[spectateIndex % aliveEntities.length];
+                    camTargetPos = target.mesh.position;
+                }
+            }
+
+            camera.position.x = camTargetPos.x + Math.sin(cameraAngleY) * camDist * Math.cos(cameraAngleX);
+            camera.position.y = camTargetPos.y + Math.sin(cameraAngleX) * camDist + 1;
+            camera.position.z = camTargetPos.z + Math.cos(cameraAngleY) * camDist * Math.cos(cameraAngleX);
+            camera.lookAt(camTargetPos.x, camTargetPos.y + 1, camTargetPos.z);
 
             renderer.render(scene, camera);
             drawFX();
             updateHUD();
         }
 
-        // NPC AI動作
+        // NPC AI
         function updateNPCs() {
             entities.forEach(e => {
                 if (e.isPlayer || e.hp <= 0 || e.isDead) return;
