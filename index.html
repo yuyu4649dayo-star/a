@@ -14,14 +14,13 @@
         }
         body {
             overflow: hidden;
-            background-color: #1e1e1e;
+            background-color: #1a1a1a;
             font-family: sans-serif;
         }
         #gameCanvas {
             display: block;
             touch-action: none;
         }
-        /* UIボタンのスタイル */
         #ui-layer {
             position: absolute;
             top: 15px;
@@ -30,7 +29,7 @@
         }
         .btn {
             padding: 10px 18px;
-            font-size: 16px;
+            font-size: 15px;
             font-weight: bold;
             color: #fff;
             background-color: #2e7d32;
@@ -48,7 +47,7 @@
 <body>
 
     <div id="ui-layer">
-        <button class="btn" id="seButton">ボタン効果音 🔊</button>
+        <button class="btn" id="soundBtn">効果音ボタン 🔊</button>
     </div>
 
     <canvas id="gameCanvas"></canvas>
@@ -57,7 +56,6 @@
         const canvas = document.getElementById('gameCanvas');
         const ctx = canvas.getContext('2d');
 
-        // 画面サイズ調整
         function resize() {
             canvas.width = window.innerWidth;
             canvas.height = window.innerHeight;
@@ -66,7 +64,7 @@
         resize();
 
         // ==========================================
-        // 1. 効果音（Web Audio API）
+        // 1. ボタンを押した時の効果音（Web Audio API）
         // ==========================================
         const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
 
@@ -89,28 +87,26 @@
             osc.stop(audioCtx.currentTime + duration);
         }
 
-        // ボタンのクリック時に効果音を鳴らす
-        document.getElementById('seButton').addEventListener('pointerdown', (e) => {
+        document.getElementById('soundBtn').addEventListener('pointerdown', (e) => {
             e.stopPropagation();
-            playSE(700, 0.1);
+            playSE(800, 0.1);
         });
 
         // ==========================================
         // 2. ステータスバランス調整
         // ==========================================
         // 弱体化したゾンビ
-        const ZOMBIE_STATS = { hp: 30, maxHp: 30, attack: 5, speed: 1.2, radius: 16 };
+        const ZOMBIE_STATS = { hp: 30, maxHp: 30, attack: 4, speed: 1.0, radius: 16 };
         
         // 強化された人間NPC
-        const NPC_STATS = { hp: 120, maxHp: 120, attack: 25, speed: 2.2, radius: 16, detectRange: 200 };
+        const NPC_STATS = { hp: 150, maxHp: 150, attack: 25, speed: 2.2, radius: 16, detectRange: 250 };
 
         // プレイヤー
-        const player = { x: 150, y: 200, radius: 16, hp: 100, maxHp: 100, speed: 3.2, angle: 0 };
+        const player = { x: 150, y: 200, radius: 16, hp: 100, maxHp: 100, speed: 3.0, angle: 0, isWalking: false };
 
-        // キャラクター配列
         let zombies = [
-            { x: 500, y: 200, hp: ZOMBIE_STATS.hp, cooldown: 0 },
-            { x: 600, y: 350, hp: ZOMBIE_STATS.hp, cooldown: 0 }
+            { x: 550, y: 180, hp: ZOMBIE_STATS.hp, cooldown: 0 },
+            { x: 600, y: 380, hp: ZOMBIE_STATS.hp, cooldown: 0 }
         ];
 
         let npcs = [
@@ -119,12 +115,12 @@
 
         // 障害物（壁）
         const obstacles = [
-            { x: 300, y: 100, w: 120, h: 200 },
-            { x: 150, y: 400, w: 300, h: 60 }
+            { x: 320, y: 120, w: 100, h: 220 },
+            { x: 180, y: 420, w: 280, h: 60 }
         ];
 
         // ==========================================
-        // 3. 障害物のすり抜け防止（当たり判定）
+        // 3. 障害物のすり抜け防止（判定と移動制限）
         // ==========================================
         function isCollidingWithWalls(x, y, radius) {
             for (let wall of obstacles) {
@@ -133,118 +129,148 @@
                 let distX = x - closestX;
                 let distY = y - closestY;
                 if ((distX * distX + distY * distY) < (radius * radius)) {
-                    return true; // 衝突あり
+                    return true;
                 }
             }
             return false;
         }
 
         function moveEntity(entity, dx, dy) {
-            // X方向への移動チェック
+            // X軸方向の衝突チェック
             if (!isCollidingWithWalls(entity.x + dx, entity.y, entity.radius)) {
                 entity.x += dx;
             }
-            // Y方向への移動チェック
+            // Y軸方向の衝突チェック
             if (!isCollidingWithWalls(entity.x, entity.y + dy, entity.radius)) {
                 entity.y += dy;
             }
         }
 
         // ==========================================
-        // 4. タッチ操作UI（ジョイスティック ＆ はたく丸エフェクト）
+        // 4. 操作系（十字キー ＋ タッチ歩き ＆ マイクラ風「はたく」丸UI）
         // ==========================================
-        let touchMoveId = null;
-        let touchActionId = null;
+        const dpad = { x: 100, size: 60 }; // 左下に配置
+        let dpadInput = { x: 0, y: 0 };
 
-        let joystick = { active: false, startX: 0, startY: 0, currX: 0, currY: 0 };
+        let touchDpadId = null;
+        let touchWalkId = null;
+
         let hitRing = { active: false, x: 0, y: 0, progress: 0 };
 
         canvas.addEventListener('touchstart', (e) => {
             e.preventDefault();
-            for (let t of e.changedTouches) {
-                // 画面左半分：移動用バーチャル十字キー
-                if (t.clientX < canvas.width / 2 && touchMoveId === null) {
-                    touchMoveId = t.identifier;
-                    joystick = { active: true, startX: t.clientX, startY: t.clientY, currX: t.clientX, currY: t.clientY };
-                } 
-                // 画面右半分：荒野行動風タッチ操作 ＆ マイクラ風「はたく」丸エフェクト
-                else if (t.clientX >= canvas.width / 2) {
-                    touchActionId = t.identifier;
-                    hitRing = { active: true, x: t.clientX, y: t.clientY, progress: 0 };
-                    playSE(900, 0.05); // 打撃音
+            const dpadY = canvas.height - 120;
 
-                    // タッチした方向にプレイヤーが攻撃
-                    player.angle = Math.atan2(t.clientY - player.y, t.clientX - player.x);
-                    attackZombiesInFront();
+            for (let t of e.changedTouches) {
+                // 十字キー領域のタッチ
+                let distToDpad = Math.hypot(t.clientX - dpad.x, t.clientY - dpadY);
+                if (distToDpad < 80 && touchDpadId === null) {
+                    touchDpadId = t.identifier;
+                    updateDpadInput(t.clientX, t.clientY, dpadY);
+                    continue;
+                }
+
+                // 画面タッチ操作（タッチした方向に向きを変えて歩く ＋ マイクラ風「はたく」丸）
+                if (touchWalkId === null) {
+                    touchWalkId = t.identifier;
+                    updateTouchWalk(t.clientX, t.clientY);
+
+                    hitRing = { active: true, x: t.clientX, y: t.clientY, progress: 0 };
+                    playSE(900, 0.05);
+
+                    attackAtPosition(t.clientX, t.clientY);
                 }
             }
         }, { passive: false });
 
         canvas.addEventListener('touchmove', (e) => {
             e.preventDefault();
+            const dpadY = canvas.height - 120;
+
             for (let t of e.changedTouches) {
-                if (t.identifier === touchMoveId) {
-                    joystick.currX = t.clientX;
-                    joystick.currY = t.clientY;
+                if (t.identifier === touchDpadId) {
+                    updateDpadInput(t.clientX, t.clientY, dpadY);
                 }
-                if (t.identifier === touchActionId) {
+                if (t.identifier === touchWalkId) {
+                    updateTouchWalk(t.clientX, t.clientY);
                     hitRing.x = t.clientX;
                     hitRing.y = t.clientY;
-                    player.angle = Math.atan2(t.clientY - player.y, t.clientX - player.x);
                 }
             }
         }, { passive: false });
 
-        const resetTouch = (e) => {
+        const handleTouchEnd = (e) => {
             for (let t of e.changedTouches) {
-                if (t.identifier === touchMoveId) {
-                    touchMoveId = null;
-                    joystick.active = false;
+                if (t.identifier === touchDpadId) {
+                    touchDpadId = null;
+                    dpadInput = { x: 0, y: 0 };
                 }
-                if (t.identifier === touchActionId) {
-                    touchActionId = null;
+                if (t.identifier === touchWalkId) {
+                    touchWalkId = null;
+                    player.isWalking = false;
                     hitRing.active = false;
                 }
             }
         };
-        canvas.addEventListener('touchend', resetTouch);
-        canvas.addEventListener('touchcancel', resetTouch);
+        canvas.addEventListener('touchend', handleTouchEnd);
+        canvas.addEventListener('touchcancel', handleTouchEnd);
 
-        // プレイヤーの攻撃処理
-        function attackZombiesInFront() {
+        function updateDpadInput(tx, ty, dpadY) {
+            let dx = tx - dpad.x;
+            let dy = ty - dpadY;
+            let dist = Math.hypot(dx, dy);
+            if (dist > 10) {
+                dpadInput.x = dx / dist;
+                dpadInput.y = dy / dist;
+                player.angle = Math.atan2(dy, dx);
+            } else {
+                dpadInput = { x: 0, y: 0 };
+            }
+        }
+
+        function updateTouchWalk(tx, ty) {
+            let dx = tx - player.x;
+            let dy = ty - player.y;
+            if (Math.hypot(dx, dy) > 15) {
+                player.angle = Math.atan2(dy, dx);
+                player.isWalking = true;
+            }
+        }
+
+        function attackAtPosition(tx, ty) {
             zombies.forEach(zombie => {
-                let dist = Math.hypot(zombie.x - player.x, zombie.y - player.y);
-                if (dist < 60) {
+                let dist = Math.hypot(zombie.x - tx, zombie.y - ty);
+                if (dist < 50) {
                     zombie.hp -= 20;
-                    playSE(300, 0.1); // ダメージ音
+                    playSE(300, 0.1);
                 }
             });
         }
 
         // ==========================================
-        // 5. ゲームループ＆更新処理
+        // 5. ゲームロジックの更新
         // ==========================================
         function update() {
-            // --- プレイヤー移動処理 ---
-            if (joystick.active) {
-                let dx = joystick.currX - joystick.startX;
-                let dy = joystick.currY - joystick.startY;
-                let dist = Math.hypot(dx, dy);
+            // --- プレイヤー移動（十字キー または タッチ歩き）---
+            let mx = 0;
+            let my = 0;
 
-                if (dist > 5) {
-                    let angle = Math.atan2(dy, dx);
-                    if (!touchActionId) player.angle = angle; // 攻撃中でなければ移動方向を向く
-                    let moveX = Math.cos(angle) * player.speed;
-                    let moveY = Math.sin(angle) * player.speed;
-                    moveEntity(player, moveX, moveY);
-                }
+            if (dpadInput.x !== 0 || dpadInput.y !== 0) {
+                mx = dpadInput.x * player.speed;
+                my = dpadInput.y * player.speed;
+            } else if (player.isWalking) {
+                mx = Math.cos(player.angle) * player.speed;
+                my = Math.sin(player.angle) * player.speed;
             }
 
-            // --- 人間NPCのAI更新 ---
+            if (mx !== 0 || my !== 0) {
+                moveEntity(player, mx, my);
+            }
+
+            // --- 強化された人間NPCのAI ---
             npcs.forEach(npc => {
                 if (npc.cooldown > 0) npc.cooldown--;
 
-                // 一番近いゾンビを探す
                 let targetZombie = null;
                 let minDist = NPC_STATS.detectRange;
 
@@ -257,24 +283,21 @@
                 });
 
                 if (targetZombie) {
-                    // ゾンビに向かって移動
                     let angle = Math.atan2(targetZombie.y - npc.y, targetZombie.x - npc.x);
                     moveEntity(npc, Math.cos(angle) * NPC_STATS.speed, Math.sin(angle) * NPC_STATS.speed);
 
-                    // 攻撃範囲内なら攻撃（強いNPCがゾンビを倒す）
                     if (minDist < 35 && npc.cooldown === 0) {
                         targetZombie.hp -= NPC_STATS.attack;
-                        npc.cooldown = 30; // 0.5秒ごとに攻撃
+                        npc.cooldown = 20; // 攻撃間隔を短く強化
                         playSE(500, 0.05);
                     }
                 }
             });
 
-            // --- ゾンビのAI更新 ---
+            // --- 弱体化したゾンビのAI ---
             zombies.forEach(zombie => {
                 if (zombie.cooldown > 0) zombie.cooldown--;
 
-                // 一番近い人間（プレイヤーまたはNPC）を狙う
                 let targets = [player, ...npcs];
                 let nearestTarget = targets.reduce((prev, curr) => {
                     let distPrev = Math.hypot(prev.x - zombie.x, prev.y - zombie.y);
@@ -285,17 +308,14 @@
                 let dist = Math.hypot(nearestTarget.x - zombie.x, nearestTarget.y - zombie.y);
                 let angle = Math.atan2(nearestTarget.y - zombie.y, nearestTarget.x - zombie.x);
 
-                // 弱体化したゾンビの遅い移動
                 moveEntity(zombie, Math.cos(angle) * ZOMBIE_STATS.speed, Math.sin(angle) * ZOMBIE_STATS.speed);
 
-                // 攻撃（攻撃力が低い）
                 if (dist < 32 && zombie.cooldown === 0) {
                     nearestTarget.hp -= ZOMBIE_STATS.attack;
-                    zombie.cooldown = 50;
+                    zombie.cooldown = 60;
                 }
             });
 
-            // 死亡処理（HPが0以下になったら除外）
             zombies = zombies.filter(z => z.hp > 0);
             npcs = npcs.filter(n => n.hp > 0);
         }
@@ -306,7 +326,7 @@
         function draw() {
             ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-            // --- 障害物（壁）描画 ---
+            // 障害物（壁）
             ctx.fillStyle = '#424242';
             ctx.strokeStyle = '#616161';
             ctx.lineWidth = 4;
@@ -315,36 +335,41 @@
                 ctx.strokeRect(w.x, w.y, w.w, w.h);
             });
 
-            // --- 人間NPC描画 (青緑色) ---
+            // 人間NPC
             npcs.forEach(npc => drawCharacter(npc, '#00bcd4', 'NPC', npc.hp, NPC_STATS.maxHp));
 
-            // --- ゾンビ描画 (緑色) ---
+            // ゾンビ
             zombies.forEach(zombie => drawCharacter(zombie, '#4caf50', 'ゾンビ', zombie.hp, ZOMBIE_STATS.maxHp));
 
-            // --- プレイヤー描画 (青色) ---
+            // プレイヤー
             drawCharacter(player, '#2196f3', 'プレイヤー', player.hp, player.maxHp);
 
-            // --- 移動用ジョイスティックUI ---
-            if (joystick.active) {
-                ctx.beginPath();
-                ctx.arc(joystick.startX, joystick.startY, 50, 0, Math.PI * 2);
-                ctx.fillStyle = 'rgba(255, 255, 255, 0.2)';
-                ctx.fill();
+            // 十字キーUI (画面左下)
+            const dpadY = canvas.height - 120;
+            ctx.save();
+            ctx.translate(dpad.x, dpadY);
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.15)';
+            ctx.strokeStyle = 'rgba(255, 255, 255, 0.4)';
+            ctx.lineWidth = 3;
 
-                ctx.beginPath();
-                ctx.arc(joystick.currX, joystick.currY, 25, 0, Math.PI * 2);
-                ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
-                ctx.fill();
-            }
+            ctx.beginPath();
+            ctx.arc(0, 0, 60, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.stroke();
 
-            // --- マイクラ風「はたく」丸い円形エフェクト ---
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
+            ctx.fillRect(-12, -45, 24, 90);
+            ctx.fillRect(-45, -12, 90, 24);
+            ctx.restore();
+
+            // マイクラ風「はたく」丸エフェクト
             if (hitRing.active) {
-                hitRing.progress += 0.08;
+                hitRing.progress += 0.1;
                 if (hitRing.progress > 1) hitRing.progress = 0;
 
                 ctx.save();
                 ctx.beginPath();
-                ctx.arc(hitRing.x, hitRing.y, 30, 0, Math.PI * 2 * hitRing.progress);
+                ctx.arc(hitRing.x, hitRing.y, 28, 0, Math.PI * 2 * hitRing.progress);
                 ctx.strokeStyle = 'rgba(255, 255, 255, 0.9)';
                 ctx.lineWidth = 5;
                 ctx.stroke();
@@ -352,12 +377,10 @@
             }
         }
 
-        // キャラクター共通描画関数
         function drawCharacter(char, color, label, hp, maxHp) {
             ctx.save();
             ctx.translate(char.x, char.y);
 
-            // 本体
             ctx.beginPath();
             ctx.arc(0, 0, char.radius, 0, Math.PI * 2);
             ctx.fillStyle = color;
@@ -366,7 +389,6 @@
             ctx.lineWidth = 2;
             ctx.stroke();
 
-            // 向きの線
             if (char.angle !== undefined) {
                 ctx.beginPath();
                 ctx.moveTo(0, 0);
@@ -376,22 +398,19 @@
                 ctx.stroke();
             }
 
-            // HPバー
-            ctx.fillStyle = 'rgba(0,0,0,0.5)';
-            ctx.fillRect(-20, -28, 40, 6);
+            ctx.fillStyle = 'rgba(0,0,0,0.6)';
+            ctx.fillRect(-20, -26, 40, 5);
             ctx.fillStyle = hp > maxHp * 0.3 ? '#4caf50' : '#f44336';
-            ctx.fillRect(-20, -28, (hp / maxHp) * 40, 6);
+            ctx.fillRect(-20, -26, (hp / maxHp) * 40, 5);
 
-            // 名前の表示
             ctx.fillStyle = '#fff';
-            ctx.font = '12px sans-serif';
+            ctx.font = '11px sans-serif';
             ctx.textAlign = 'center';
-            ctx.fillText(label, 0, -32);
+            ctx.fillText(label, 0, -30);
 
             ctx.restore();
         }
 
-        // メインループ
         function loop() {
             update();
             draw();
