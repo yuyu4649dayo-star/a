@@ -8,7 +8,7 @@
         * {
             margin: 0; padding: 0; box-sizing: border-box;
             user-select: none; -webkit-user-select: none;
-            touch-action: none; /* タッチによる画面ズレ・スクロール防止 */
+            touch-action: none; /* 画面のスクロール・ズレを完全にシャットアウト */
         }
         body, html {
             width: 100%; height: 100%; overflow: hidden;
@@ -46,6 +46,23 @@
         #game-hud { position: absolute; width: 100%; height: 100%; pointer-events: none; display: none; z-index: 10; }
         .hud-top { position: absolute; top: 15px; left: 15px; color: #fff; font-weight: bold; font-size: 16px; text-shadow: 1px 1px 3px #000; }
         
+        /* 視覚的 十字キー（ジョイスティック）UI */
+        #dpad-base {
+            position: absolute; bottom: 30px; left: 30px;
+            width: 120px; height: 120px;
+            background: rgba(255, 255, 255, 0.15);
+            border: 2px solid rgba(255, 255, 255, 0.4);
+            border-radius: 50%; pointer-events: auto;
+        }
+        #dpad-knob {
+            position: absolute; top: 35px; left: 35px;
+            width: 50px; height: 50px;
+            background: rgba(255, 255, 255, 0.6);
+            border-radius: 50%;
+            box-shadow: 0 0 10px rgba(0,0,0,0.5);
+            transition: transform 0.05s ease-out;
+        }
+
         .action-btns { position: absolute; bottom: 20px; right: 20px; display: flex; flex-direction: column; gap: 10px; pointer-events: auto; }
         .act-btn {
             padding: 12px 20px; font-size: 16px; font-weight: bold; color: #fff; background: rgba(0,0,0,0.6);
@@ -53,7 +70,7 @@
         }
         .act-btn:active { background: rgba(255,255,255,0.4); }
 
-        /* マイクラ風はたく丸UIエフェクトCanvas */
+        /* マイクラ風はたく丸UI Canvas */
         #fxCanvas { position: absolute; top:0; left:0; width:100%; height:100%; pointer-events: none; z-index: 20; }
     </style>
     <!-- Three.js CDN -->
@@ -83,13 +100,19 @@
             <div id="hpInfo">HP: 100</div>
             <div id="ammoInfo">弾薬: -</div>
         </div>
+
+        <!-- 画面左下のバーチャル十字キーUI -->
+        <div id="dpad-base">
+            <div id="dpad-knob"></div>
+        </div>
+
         <div class="action-btns" id="actionContainer"></div>
     </div>
 
     <canvas id="fxCanvas"></canvas>
 
     <script>
-        // 画面揺れ・不要なスクロールをブラウザ全体でシャットアウト
+        // ブラウザのタッチスワイプでの画面ズレ防止
         document.addEventListener('touchmove', (e) => e.preventDefault(), { passive: false });
 
         // --- 効果音再生 (Web Audio API) ---
@@ -117,7 +140,7 @@
         let playerStats = { hp: 100, maxHp: 100, ammo: 10, reserveAmmo: 20, isStunned: false, stunTimer: 0 };
         let cameraAngleY = 0, cameraAngleX = 0.3;
 
-        // 銃のリコイル・発射エフェクト用変数
+        // 銃のリコイル・発射エフェクト用
         let recoilZ = 0;
         let muzzleFlashTimer = 0;
 
@@ -127,7 +150,7 @@
         let lastTouchX = 0, lastTouchY = 0;
         let hitRing = { active: false, x: 0, y: 0, progress: 0 };
 
-        // 1. 陣営選択 ＆ ロード遷移
+        // 1. 陣営選択 ＆ ロード画面
         function selectTeam(team) {
             playSE(800, 'square', 0.15);
             playerTeam = team;
@@ -153,7 +176,7 @@
             document.getElementById('teamInfo').innerText = `陣営: ${playerTeam === 'human' ? '人間' : 'ゾンビ'}`;
             setupHUDButtons();
 
-            // Three.js シーン作成
+            // Three.js シーン
             scene = new THREE.Scene();
             scene.background = new THREE.Color(0x111115);
             scene.fog = new THREE.FogExp2(0x111115, 0.02);
@@ -170,23 +193,23 @@
             dirLight.position.set(20, 40, 20);
             scene.add(dirLight);
 
-            // マップ（床）
+            // 床
             const floorGeo = new THREE.PlaneGeometry(100, 100);
             const floorMat = new THREE.MeshStandardMaterial({ color: 0x222225 });
             const floor = new THREE.Mesh(floorGeo, floorMat);
             floor.rotation.x = -Math.PI / 2;
             scene.add(floor);
 
-            // 障害物（壁）生成
+            // 障害物配置（引っかかりにくい柱構造に変更）
             createObstacles();
 
-            // マップ上の弾薬箱（数を大幅に減らして2個のみ配置）
+            // 散らばる弾薬箱（2個）
             createAmmoBoxes();
 
-            // 5vs5 キャラクターの生成
+            // 5vs5 キャラクター生成
             spawnEntities();
 
-            // タッチイベント設定
+            // タッチ操作設定
             setupTouchControls();
 
             // リサイズ対応
@@ -199,13 +222,13 @@
             animate();
         }
 
-        // 3. 障害物の配置
+        // 3. 障害物の配置（引っかかりを防ぐためにサイズ調整）
         function createObstacles() {
             const obsData = [
-                { x: 0, z: -10, w: 20, h: 4, d: 2 },
-                { x: -15, z: 10, w: 4, h: 4, d: 15 },
-                { x: 15, z: 5, w: 4, h: 4, d: 15 },
-                { x: 0, z: 20, w: 15, h: 4, d: 4 }
+                { x: -8, z: 0, w: 4, h: 4, d: 4 },
+                { x: 8, z: 0, w: 4, h: 4, d: 4 },
+                { x: 0, z: -12, w: 10, h: 4, d: 3 },
+                { x: 0, z: 12, w: 10, h: 4, d: 3 }
             ];
             const mat = new THREE.MeshStandardMaterial({ color: 0x444450 });
 
@@ -223,12 +246,10 @@
             });
         }
 
-        // マップ上に散らばる弾薬箱（ご要望により5個から2個に削減）
+        // 散らばる弾薬箱
         function createAmmoBoxes() {
             const mat = new THREE.MeshStandardMaterial({ color: 0xffcc00 });
-            const positions = [
-                { x: -5, z: 0 }, { x: 5, z: 5 }
-            ];
+            const positions = [{ x: -4, z: -2 }, { x: 4, z: 2 }];
             positions.forEach(pos => {
                 const geo = new THREE.BoxGeometry(0.8, 0.6, 0.8);
                 const mesh = new THREE.Mesh(geo, mat);
@@ -245,14 +266,13 @@
 
             const isPlayerHuman = (playerTeam === 'human');
             const pGeo = new THREE.CylinderGeometry(0.5, 0.5, 1.8);
+            
+            // プレイヤー生成
             playerBody = new THREE.Mesh(pGeo, isPlayerHuman ? humanMat : zombieMat);
             playerBody.position.set(0, 0.9, 15);
             scene.add(playerBody);
 
-            // 人間の場合、手に銃のモデルを装備
-            if (isPlayerHuman) {
-                attachGunToPlayer();
-            }
+            if (isPlayerHuman) attachGunToPlayer();
 
             player = {
                 mesh: playerBody, isPlayer: true, team: playerTeam,
@@ -260,35 +280,34 @@
             };
             entities.push(player);
 
-            // 味方NPC (4体) ＆ 敵NPC (5体)
+            // NPC (味方4体 + 敵5体)
             for (let i = 0; i < 9; i++) {
                 const isHuman = (i < 4) ? isPlayerHuman : !isPlayerHuman;
                 const mesh = new THREE.Mesh(pGeo, isHuman ? humanMat : zombieMat);
                 
-                const spawnZ = isHuman ? 12 + Math.random()*4 : -12 - Math.random()*4;
-                const spawnX = (Math.random() - 0.5) * 20;
+                // 出現位置
+                const spawnZ = isHuman ? 10 + Math.random()*4 : -10 - Math.random()*4;
+                const spawnX = (Math.random() - 0.5) * 16;
                 mesh.position.set(spawnX, 0.9, spawnZ);
                 scene.add(mesh);
 
                 entities.push({
                     mesh: mesh, isPlayer: false, team: isHuman ? 'human' : 'zombie',
-                    hp: isHuman ? 140 : 40, maxHp: isHuman ? 140 : 40,
-                    speed: isHuman ? 0.08 : 0.06, cooldown: 0, stunTimer: 0
+                    hp: isHuman ? 120 : 60, maxHp: isHuman ? 120 : 60,
+                    speed: isHuman ? 0.08 : 0.09, cooldown: 0, stunTimer: 0
                 });
             }
         }
 
-        // 銃モデルの作成と装備
+        // プレイヤーに銃を装着
         function attachGunToPlayer() {
             const gunGroup = new THREE.Group();
             
-            // ピストルのボディ
             const gunBodyGeo = new THREE.BoxGeometry(0.12, 0.18, 0.5);
             const gunMat = new THREE.MeshStandardMaterial({ color: 0x111111 });
             const gunBody = new THREE.Mesh(gunBodyGeo, gunMat);
             gunGroup.add(gunBody);
 
-            // 銃口のマズルフラッシュ（発射時の光）
             const flashGeo = new THREE.SphereGeometry(0.15, 8, 8);
             const flashMat = new THREE.MeshBasicMaterial({ color: 0xffaa00 });
             muzzleFlash = new THREE.Mesh(flashGeo, flashMat);
@@ -296,13 +315,12 @@
             muzzleFlash.visible = false;
             gunGroup.add(muzzleFlash);
 
-            // プレイヤー体の右前方に配置
             gunGroup.position.set(0.35, 0.2, 0.4);
             playerBody.add(gunGroup);
             gunMesh = gunGroup;
         }
 
-        // HUDのアクションボタン生成
+        // HUDボタン生成
         function setupHUDButtons() {
             const container = document.getElementById('actionContainer');
             container.innerHTML = '';
@@ -323,7 +341,7 @@
             }
         }
 
-        // すり抜け防止（障害物の当たり判定）
+        // 当たり判定（障害物すり抜け防止）
         function checkObstacleCollision(newPos, radius = 0.5) {
             for (let obs of obstacles) {
                 const box = obs.box;
@@ -338,62 +356,54 @@
             return false;
         }
 
-        // プレイヤー移動処理
+        // プレイヤーの移動処理（カメラ方向に準拠した正しい前進・後退）
         function movePlayer() {
             if (player.stunTimer > 0) return;
 
-            let moveX = 0, moveZ = 0;
-            if (Math.abs(dpadInput.x) > 0.1 || Math.abs(dpadInput.y) > 0.1) {
-                const sin = Math.sin(cameraAngleY);
-                const cos = Math.cos(cameraAngleY);
-                moveX = (dpadInput.x * cos - dpadInput.y * sin) * player.speed;
-                moveZ = (dpadInput.x * sin + dpadInput.y * cos) * player.speed;
-            }
+            if (Math.abs(dpadInput.x) > 0.05 || Math.abs(dpadInput.y) > 0.05) {
+                // カメラの見ている方向を計算
+                const forwardX = -Math.sin(cameraAngleY);
+                const forwardZ = -Math.cos(cameraAngleY);
+                const rightX = Math.cos(cameraAngleY);
+                const rightZ = -Math.sin(cameraAngleY);
 
-            let nextPos = player.mesh.position.clone();
-            nextPos.x += moveX;
-            if (!checkObstacleCollision(nextPos)) player.mesh.position.x = nextPos.x;
+                // スティックの入力からワールド移動量を算出 (dpadInput.y < 0 が前進)
+                const moveX = (rightX * dpadInput.x - forwardX * dpadInput.y) * player.speed;
+                const moveZ = (rightZ * dpadInput.x - forwardZ * dpadInput.y) * player.speed;
 
-            nextPos = player.mesh.position.clone();
-            nextPos.z += moveZ;
-            if (!checkObstacleCollision(nextPos)) player.mesh.position.z = nextPos.z;
+                // X軸・Z軸それぞれ壁滑り移動チェック
+                let nextPos = player.mesh.position.clone();
+                nextPos.x += moveX;
+                if (!checkObstacleCollision(nextPos)) player.mesh.position.x = nextPos.x;
 
-            if (moveX !== 0 || moveZ !== 0) {
+                nextPos = player.mesh.position.clone();
+                nextPos.z += moveZ;
+                if (!checkObstacleCollision(nextPos)) player.mesh.position.z = nextPos.z;
+
+                // 進行方向を向く
                 player.mesh.rotation.y = Math.atan2(moveX, moveZ);
             }
         }
 
-        // 人間アクション：射撃（反動＆マズルフラッシュ付き）
+        // 射撃（反動・エフェクト付き）
         function humanShoot() {
             if (playerStats.ammo <= 0) { playSE(200, 'sawtooth', 0.1); return; }
             playerStats.ammo--;
             playSE(900, 'square', 0.08);
             updateHUD();
 
-            // 1. 銃の反動（リコイル）を設定
             recoilZ = 0.25;
-
-            // 2. マズルフラッシュ表示
-            if (muzzleFlash) {
-                muzzleFlash.visible = true;
-                muzzleFlashTimer = 3; // 3フレーム点灯
-            }
-
-            // 3. 弾道トレーサー線（光の筋）のエフェクト描画
+            if (muzzleFlash) { muzzleFlash.visible = true; muzzleFlashTimer = 3; }
             createBulletTracer();
 
-            // 4. 敵ヒット判定
             entities.forEach(e => {
                 if (e.team !== 'human' && e.hp > 0) {
                     const dist = player.mesh.position.distanceTo(e.mesh.position);
-                    if (dist < 15) {
-                        e.hp -= 25;
-                    }
+                    if (dist < 15) e.hp -= 25;
                 }
             });
         }
 
-        // 弾道エフェクト線
         function createBulletTracer() {
             const start = player.mesh.position.clone().add(new THREE.Vector3(0, 1.1, 0));
             const dir = new THREE.Vector3(Math.sin(player.mesh.rotation.y), 0, Math.cos(player.mesh.rotation.y));
@@ -404,12 +414,9 @@
             const mat = new THREE.LineBasicMaterial({ color: 0xffea00 });
             const line = new THREE.Line(geo, mat);
             scene.add(line);
-
-            // 一瞬で消失
             setTimeout(() => scene.remove(line), 50);
         }
 
-        // 人間アクション：リロード
         function humanReload() {
             if (playerStats.reserveAmmo <= 0 || playerStats.ammo >= 10) return;
             playSE(400, 'sine', 0.2);
@@ -440,21 +447,24 @@
         function meleeAttack(dmg, range) {
             entities.forEach(e => {
                 if (e.team !== playerTeam && e.hp > 0) {
-                    if (player.mesh.position.distanceTo(e.mesh.position) < range) {
-                        e.hp -= dmg;
-                    }
+                    if (player.mesh.position.distanceTo(e.mesh.position) < range) e.hp -= dmg;
                 }
             });
         }
 
-        // タッチ操作 ＆ マイクラ風はたく円UI
+        // タッチ操作 ＆ バーチャル十字キー（UI更新付き）
         function setupTouchControls() {
+            const dpadBase = document.getElementById('dpad-base');
+            const dpadKnob = document.getElementById('dpad-knob');
+
             window.addEventListener('touchstart', (e) => {
                 for (let t of e.changedTouches) {
+                    // 左側：十字キー
                     if (t.clientX < window.innerWidth / 2 && touchDpadId === null) {
                         touchDpadId = t.identifier;
-                        updateDpad(t.clientX, t.clientY);
+                        updateDpadUI(t.clientX, t.clientY);
                     } 
+                    // 右側：視点・攻撃エフェクト
                     else if (t.clientX >= window.innerWidth / 2 && touchLookId === null) {
                         touchLookId = t.identifier;
                         lastTouchX = t.clientX; lastTouchY = t.clientY;
@@ -466,7 +476,7 @@
 
             window.addEventListener('touchmove', (e) => {
                 for (let t of e.changedTouches) {
-                    if (t.identifier === touchDpadId) updateDpad(t.clientX, t.clientY);
+                    if (t.identifier === touchDpadId) updateDpadUI(t.clientX, t.clientY);
                     if (t.identifier === touchLookId) {
                         let dx = t.clientX - lastTouchX;
                         let dy = t.clientY - lastTouchY;
@@ -480,7 +490,11 @@
 
             const resetTouch = (e) => {
                 for (let t of e.changedTouches) {
-                    if (t.identifier === touchDpadId) { touchDpadId = null; dpadInput = { x: 0, y: 0 }; }
+                    if (t.identifier === touchDpadId) {
+                        touchDpadId = null;
+                        dpadInput = { x: 0, y: 0 };
+                        dpadKnob.style.transform = `translate(0px, 0px)`;
+                    }
                     if (t.identifier === touchLookId) { touchLookId = null; hitRing.active = false; }
                 }
             };
@@ -488,14 +502,28 @@
             window.addEventListener('touchcancel', resetTouch);
         }
 
-        function updateDpad(tx, ty) {
-            const centerX = 100, centerY = window.innerHeight - 100;
-            let dx = tx - centerX, dy = ty - centerY;
+        // 十字キーUIの表示更新と入力計算
+        function updateDpadUI(tx, ty) {
+            const dpadBase = document.getElementById('dpad-base').getBoundingClientRect();
+            const centerX = dpadBase.left + dpadBase.width / 2;
+            const centerY = dpadBase.top + dpadBase.height / 2;
+
+            let dx = tx - centerX;
+            let dy = ty - centerY;
             let dist = Math.hypot(dx, dy);
-            if (dist > 10) {
-                dpadInput.x = dx / Math.min(dist, 50);
-                dpadInput.y = dy / Math.min(dist, 50);
-            } else dpadInput = { x: 0, y: 0 };
+            const maxRadius = 40;
+
+            if (dist > 0) {
+                let clampDist = Math.min(dist, maxRadius);
+                let knobX = (dx / dist) * clampDist;
+                let knobY = (dy / dist) * clampDist;
+                
+                // スティックUIを指の位置に動かす
+                document.getElementById('dpad-knob').style.transform = `translate(${knobX}px, ${knobY}px)`;
+
+                dpadInput.x = dx / maxRadius;
+                dpadInput.y = dy / maxRadius;
+            }
         }
 
         // --- メインループ ---
@@ -505,22 +533,19 @@
             if (player.stunTimer > 0) player.stunTimer--;
             movePlayer();
 
-            // 銃のリコイル復元計算（スムーズに元の位置に戻る）
-            if (recoilZ > 0) {
-                recoilZ = THREE.MathUtils.lerp(recoilZ, 0, 0.2);
-            }
+            // リコイル復元
+            if (recoilZ > 0) recoilZ = THREE.MathUtils.lerp(recoilZ, 0, 0.2);
             if (gunMesh) {
                 gunMesh.position.z = 0.4 - recoilZ;
-                gunMesh.rotation.x = recoilZ * 1.5; // 少し上にも跳ね上がる
+                gunMesh.rotation.x = recoilZ * 1.5;
             }
 
-            // マズルフラッシュ消灯タイマー
             if (muzzleFlashTimer > 0) {
                 muzzleFlashTimer--;
                 if (muzzleFlashTimer <= 0 && muzzleFlash) muzzleFlash.visible = false;
             }
 
-            // 弾薬箱拾い判定
+            // 弾薬箱取得
             ammoBoxes.forEach((box, idx) => {
                 if (player.mesh.position.distanceTo(box.position) < 1.2) {
                     playerStats.reserveAmmo += 10;
@@ -531,14 +556,14 @@
                 }
             });
 
-            // NPC AI更新
+            // NPC AI動作（追従・戦闘）
             updateNPCs();
 
-            // 三人称後方カメラ追従
+            // カメラ位置更新（三人称追従）
             const camDist = 6;
-            camera.position.x = player.mesh.position.x - Math.sin(cameraAngleY) * camDist * Math.cos(cameraAngleX);
+            camera.position.x = player.mesh.position.x + Math.sin(cameraAngleY) * camDist * Math.cos(cameraAngleX);
             camera.position.y = player.mesh.position.y + Math.sin(cameraAngleX) * camDist + 1;
-            camera.position.z = player.mesh.position.z - Math.cos(cameraAngleY) * camDist * Math.cos(cameraAngleX);
+            camera.position.z = player.mesh.position.z + Math.cos(cameraAngleY) * camDist * Math.cos(cameraAngleX);
             camera.lookAt(player.mesh.position.x, player.mesh.position.y + 1, player.mesh.position.z);
 
             renderer.render(scene, camera);
@@ -546,7 +571,7 @@
             updateHUD();
         }
 
-        // NPC AI動作
+        // NPC AI（障害物を避けてターゲットへ進む）
         function updateNPCs() {
             entities.forEach(e => {
                 if (e.isPlayer || e.hp <= 0) return;
@@ -564,15 +589,23 @@
 
                 if (target) {
                     let dir = target.mesh.position.clone().sub(e.mesh.position).normalize();
-                    let nextPos = e.mesh.position.clone().add(dir.multiplyScalar(e.speed));
-                    if (!checkObstacleCollision(nextPos)) {
-                        e.mesh.position.copy(nextPos);
-                    }
+                    
+                    // X軸とZ軸を個別に動かして壁引っかかり（スタック）を自動回避
+                    let moveX = dir.x * e.speed;
+                    let moveZ = dir.z * e.speed;
+
+                    let nextX = e.mesh.position.clone(); nextX.x += moveX;
+                    if (!checkObstacleCollision(nextX)) e.mesh.position.x = nextX.x;
+
+                    let nextZ = e.mesh.position.clone(); nextZ.z += moveZ;
+                    if (!checkObstacleCollision(nextZ)) e.mesh.position.z = nextZ.z;
+
                     e.mesh.rotation.y = Math.atan2(dir.x, dir.z);
 
-                    if (minDist < 2.0 && e.cooldown === 0) {
-                        target.hp -= (e.team === 'human') ? 20 : 8;
-                        e.cooldown = 40;
+                    // 攻撃
+                    if (minDist < 2.2 && e.cooldown === 0) {
+                        target.hp -= (e.team === 'human') ? 18 : 10;
+                        e.cooldown = 35;
                     }
                 }
             });
