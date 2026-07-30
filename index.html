@@ -1,851 +1,1007 @@
 <!DOCTYPE html>
 <html lang="ja">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>3D Zombie 5v5 Survival</title>
-    <style>
-        * {
-            margin: 0; padding: 0; box-sizing: border-box;
-            user-select: none; -webkit-user-select: none;
-            touch-action: none;
-        }
-        body, html {
-            width: 100%; height: 100%; overflow: hidden;
-            position: fixed; top: 0; left: 0;
-            background: #000; font-family: sans-serif;
-        }
-        
-        /* 1. 陣営選択画面 */
-        #select-screen {
-            position: absolute; width: 100%; height: 100%;
-            background: linear-gradient(135deg, #111 0%, #220000 100%);
-            display: flex; flex-direction: column; justify-content: center; align-items: center;
-            z-index: 100; color: #fff;
-        }
-        #select-screen h1 { font-size: 32px; margin-bottom: 30px; letter-spacing: 2px; text-shadow: 0 0 10px #f00; }
-        .team-btns { display: flex; gap: 20px; }
-        .team-btn {
-            padding: 20px 30px; font-size: 20px; font-weight: bold; border-radius: 12px; border: none; cursor: pointer;
-            transition: transform 0.2s; color: #fff;
-        }
-        .team-btn:active { transform: scale(0.95); }
-        .btn-human { background: #1e88e5; box-shadow: 0 0 15px #1e88e5; }
-        .btn-zombie { background: #e53935; box-shadow: 0 0 15px #e53935; }
+<meta charset="UTF-8">
+<title>OUTBREAK :: 5v5</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Share+Tech+Mono&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#0a0908;
+    --blood:#b3121c;
+    --blood-bright:#e8303b;
+    --toxic:#7fb238;
+    --toxic-dark:#3d5420;
+    --bone:#d9cba8;
+    --steel:#565a5c;
+    --panel:rgba(10,9,8,0.72);
+  }
+  *{box-sizing:border-box; margin:0; padding:0;}
+  html,body{width:100%; height:100%; background:#000; overflow:hidden; font-family:'Share Tech Mono', monospace; color:var(--bone); user-select:none;}
+  #gameCanvas{position:fixed; top:0; left:0; width:100%; height:100%; display:block;}
 
-        /* 2. ロード画面 */
-        #loading-screen {
-            position: absolute; width: 100%; height: 100%; background: #0a0a0a;
-            display: none; flex-direction: column; justify-content: center; align-items: center;
-            z-index: 90; color: #fff;
-        }
-        .progress-bar-bg { width: 250px; height: 15px; background: #333; border-radius: 8px; overflow: hidden; margin-top: 15px; }
-        .progress-bar { width: 0%; height: 100%; background: #4caf50; transition: width 0.1s; }
+  .screen{
+    position:fixed; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center;
+    z-index:50; transition:opacity 0.5s ease;
+  }
+  .hidden{display:none !important;}
 
-        /* 3. ゲームHUD */
-        #game-hud { position: absolute; width: 100%; height: 100%; pointer-events: none; display: none; z-index: 10; }
-        .hud-top { position: absolute; top: 15px; left: 15px; color: #fff; font-weight: bold; font-size: 16px; text-shadow: 1px 1px 3px #000; }
-        
-        /* カウントダウン表示 */
-        #countdown-display {
-            position: absolute; top: 40%; left: 50%; transform: translate(-50%, -50%);
-            font-size: 72px; font-weight: bold; color: #ffeb3b; text-shadow: 0 0 20px #000;
-            display: none; pointer-events: none; z-index: 30;
-        }
+  /* ---------- SELECT SCREEN ---------- */
+  #screen-select{
+    background:radial-gradient(ellipse at center, #1a1210 0%, #050403 75%);
+    overflow:hidden;
+  }
+  #screen-select::before{
+    content:''; position:absolute; inset:0; opacity:0.06; pointer-events:none;
+    background-image:repeating-linear-gradient(0deg, #fff 0px, transparent 1px, transparent 3px);
+  }
+  .fog{
+    position:absolute; bottom:0; left:-20%; width:140%; height:40%;
+    background:linear-gradient(to top, rgba(60,20,15,0.35), transparent);
+    filter:blur(20px);
+    animation:driftFog 18s ease-in-out infinite alternate;
+  }
+  @keyframes driftFog{ from{transform:translateX(0);} to{transform:translateX(6%);} }
 
-        /* 死亡画面UI */
-        #death-screen {
-            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
-            background: rgba(0, 0, 0, 0.75);
-            display: none; flex-direction: column; justify-content: center; align-items: center;
-            z-index: 50; pointer-events: auto;
-        }
-        #death-screen h1 {
-            font-size: 64px; color: #ff1744; margin-bottom: 30px; font-weight: 900;
-            text-shadow: 0 0 20px #f00, 0 0 40px #900; letter-spacing: 4px;
-        }
-        .death-btns { display: flex; flex-direction: column; gap: 15px; width: 220px; }
-        .death-btn {
-            padding: 15px 20px; font-size: 18px; font-weight: bold; color: #fff;
-            background: rgba(255, 255, 255, 0.15); border: 2px solid #fff; border-radius: 25px;
-            cursor: pointer; transition: background 0.2s; text-align: center;
-        }
-        .death-btn:active { background: rgba(255, 255, 255, 0.4); }
+  .title-wrap{ text-align:center; z-index:2; margin-bottom:48px;}
+  .title-main{
+    font-family:'Bebas Neue', sans-serif; font-size:clamp(56px,11vw,128px); letter-spacing:14px;
+    color:var(--bone); line-height:0.9;
+    text-shadow: 0 0 18px rgba(179,18,28,0.7), 0 0 60px rgba(179,18,28,0.35);
+  }
+  .title-sub{
+    font-family:'Share Tech Mono', monospace; letter-spacing:8px; font-size:13px; color:var(--steel);
+    margin-top:10px;
+  }
+  .title-sub span{color:var(--blood-bright);}
 
-        /* 勝敗結果テロップ */
-        #result-banner {
-            position: absolute; top: 35%; left: 50%; transform: translate(-50%, -50%);
-            text-align: center; display: none; z-index: 60; pointer-events: none; width: 100%;
-        }
+  .faction-row{ display:flex; gap:40px; z-index:2; flex-wrap:wrap; justify-content:center; }
+  .faction-card{
+    width:260px; height:340px; border:1px solid rgba(217,203,168,0.25);
+    background:linear-gradient(180deg, rgba(30,25,22,0.55), rgba(10,8,7,0.85));
+    position:relative; cursor:pointer; overflow:hidden;
+    clip-path:polygon(0 0,100% 0,100% 92%,92% 100%,0 100%);
+    transition:transform 0.25s ease, border-color 0.25s ease, box-shadow 0.25s ease;
+    display:flex; flex-direction:column; justify-content:flex-end; padding:22px;
+  }
+  .faction-card:hover{ transform:translateY(-8px); }
+  .faction-card .icon{ font-size:64px; margin-bottom:14px; filter:grayscale(0.2); }
+  .faction-card h2{ font-family:'Bebas Neue',sans-serif; font-size:38px; letter-spacing:4px; }
+  .faction-card p{ font-size:11px; color:var(--steel); margin-top:8px; line-height:1.6; letter-spacing:1px;}
+  .faction-card .stripe{ position:absolute; top:0; left:0; width:6px; height:100%; }
+  #card-zombie:hover{ border-color:var(--toxic); box-shadow:0 0 40px rgba(127,178,56,0.35); }
+  #card-zombie .stripe{ background:var(--toxic); box-shadow:0 0 12px var(--toxic); }
+  #card-zombie h2{ color:var(--toxic); }
+  #card-human:hover{ border-color:var(--blood-bright); box-shadow:0 0 40px rgba(232,48,59,0.35); }
+  #card-human .stripe{ background:var(--blood-bright); box-shadow:0 0 12px var(--blood-bright); }
+  #card-human h2{ color:var(--bone); }
 
-        /* 観戦モードコントロール */
-        #spectate-hud {
-            position: absolute; bottom: 30px; left: 50%; transform: translateX(-50%);
-            display: none; pointer-events: auto; z-index: 40;
-        }
+  .hint-line{ margin-top:40px; font-size:11px; letter-spacing:3px; color:var(--steel); z-index:2;}
 
-        /* 十字キーUI */
-        #dpad-base {
-            position: absolute; bottom: 30px; left: 30px;
-            width: 120px; height: 120px;
-            background: rgba(255, 255, 255, 0.15);
-            border: 2px solid rgba(255, 255, 255, 0.4);
-            border-radius: 50%; pointer-events: auto;
-        }
-        #dpad-knob {
-            position: absolute; top: 35px; left: 35px;
-            width: 50px; height: 50px;
-            background: rgba(255, 255, 255, 0.6);
-            border-radius: 50%;
-            box-shadow: 0 0 10px rgba(0,0,0,0.5);
-            transition: transform 0.05s ease-out;
-        }
+  /* ---------- LOADING ---------- */
+  #screen-loading{ background:#050403; }
+  .load-title{ font-family:'Bebas Neue',sans-serif; font-size:42px; letter-spacing:10px; margin-bottom:26px; }
+  .load-bar-outer{ width:420px; max-width:70vw; height:6px; background:rgba(255,255,255,0.08); position:relative; }
+  .load-bar-inner{ height:100%; width:0%; background:var(--blood-bright); box-shadow:0 0 12px var(--blood-bright); transition:width 0.15s linear; }
+  .load-tip{ margin-top:18px; font-size:11px; color:var(--steel); letter-spacing:1px; height:16px; }
 
-        .action-btns { position: absolute; bottom: 20px; right: 20px; display: flex; flex-direction: column; gap: 10px; pointer-events: auto; }
-        .act-btn {
-            padding: 12px 20px; font-size: 16px; font-weight: bold; color: #fff; background: rgba(0,0,0,0.6);
-            border: 2px solid #fff; border-radius: 30px; cursor: pointer;
-        }
-        .act-btn:disabled { opacity: 0.5; cursor: not-allowed; }
-        .act-btn:active:not(:disabled) { background: rgba(255,255,255,0.4); }
+  /* ---------- RESULT ---------- */
+  #screen-result{ background:rgba(0,0,0,0.9); }
+  .result-title{ font-family:'Bebas Neue',sans-serif; font-size:110px; letter-spacing:10px; }
+  .result-title.win{ color:var(--bone); text-shadow:0 0 30px rgba(255,255,255,0.5); }
+  .result-title.lose{ color:var(--blood-bright); text-shadow:0 0 40px rgba(232,48,59,0.7); }
+  .result-sub{ letter-spacing:4px; color:var(--steel); margin-top:14px; font-size:13px; }
+  .btn-restart{
+    margin-top:44px; padding:14px 46px; background:transparent; border:1px solid var(--bone); color:var(--bone);
+    font-family:'Share Tech Mono',monospace; letter-spacing:4px; font-size:13px; cursor:pointer;
+  }
+  .btn-restart:hover{ background:var(--bone); color:#0a0908; }
 
-        #fxCanvas { position: absolute; top:0; left:0; width:100%; height:100%; pointer-events: none; z-index: 20; }
-    </style>
-    <!-- Three.js CDN -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  /* ---------- HUD ---------- */
+  #hud{ position:fixed; inset:0; z-index:20; pointer-events:none; display:none; }
+  .crosshair{
+    position:absolute; top:50%; left:50%; width:6px; height:6px; margin:-3px;
+    border:1px solid rgba(255,255,255,0.85); border-radius:50%;
+  }
+  .crosshair::before, .crosshair::after{ content:''; position:absolute; background:rgba(255,255,255,0.85); }
+  .crosshair::before{ width:14px; height:1px; top:2px; left:-18px; }
+  .crosshair::after{ width:14px; height:1px; top:2px; left:10px; }
+
+  .hud-bottomleft{ position:absolute; left:26px; bottom:24px; }
+  .hp-label{ font-size:10px; letter-spacing:3px; color:var(--steel); margin-bottom:5px;}
+  .hp-bar-outer{ width:220px; height:14px; background:rgba(255,255,255,0.08); border:1px solid rgba(255,255,255,0.15);}
+  .hp-bar-inner{ height:100%; width:100%; background:var(--blood-bright); transition:width 0.2s ease; }
+  .faction-tag{ margin-top:8px; font-size:11px; letter-spacing:2px; }
+  .faction-tag.zombie{ color:var(--toxic); }
+  .faction-tag.human{ color:var(--bone); }
+
+  .hud-bottomright{ position:absolute; right:26px; bottom:24px; text-align:right; }
+  .ammo-count{ font-family:'Bebas Neue',sans-serif; font-size:44px; letter-spacing:2px; }
+  .ammo-count .reserve{ font-family:'Share Tech Mono',monospace; font-size:16px; color:var(--steel); }
+  .weapon-name{ font-size:10px; letter-spacing:3px; color:var(--steel); }
+  .reload-tip{ font-size:10px; letter-spacing:2px; color:var(--blood-bright); margin-top:4px; height:12px;}
+
+  .hud-topcenter{ position:absolute; top:22px; left:50%; transform:translateX(-50%); text-align:center; }
+  .kill-count{ font-size:12px; letter-spacing:3px; color:var(--steel); }
+  .kill-count b{ color:var(--bone); }
+
+  .hud-topright{ position:absolute; top:22px; right:26px; text-align:right; font-size:11px; letter-spacing:2px; color:var(--steel); }
+  .ability-cd{ margin-top:4px; }
+  .ability-cd b{ color:var(--toxic); }
+
+  #stunFlash{ position:absolute; inset:0; background:rgba(120,20,20,0.0); transition:background 0.15s ease; }
+  #hitFlash{ position:absolute; inset:0; background:rgba(255,0,0,0.0); pointer-events:none; }
+
+  #centerMsg{
+    position:absolute; top:38%; left:50%; transform:translate(-50%,-50%); text-align:center;
+    font-family:'Bebas Neue',sans-serif; font-size:30px; letter-spacing:6px; color:var(--blood-bright);
+    text-shadow:0 0 20px rgba(232,48,59,0.8); opacity:0; transition:opacity 0.2s ease;
+  }
+
+  #pauseOverlay{
+    position:fixed; inset:0; z-index:30; background:rgba(0,0,0,0.6); display:none;
+    align-items:center; justify-content:center; flex-direction:column;
+  }
+  #pauseOverlay p{ font-family:'Bebas Neue',sans-serif; font-size:30px; letter-spacing:6px; }
+  #pauseOverlay span{ font-size:11px; letter-spacing:2px; color:var(--steel); margin-top:10px;}
+</style>
 </head>
 <body>
 
-    <!-- 1. 陣営選択 -->
-    <div id="select-screen">
-        <h1>BATTLE 5vs5</h1>
-        <div class="team-btns">
-            <button class="team-btn btn-human" onclick="selectTeam('human')">人間陣営で参戦</button>
-            <button class="team-btn btn-zombie" onclick="selectTeam('zombie')">ゾンビ陣営で参戦</button>
-        </div>
+<canvas id="gameCanvas"></canvas>
+
+<!-- FACTION SELECT -->
+<div id="screen-select" class="screen">
+  <div class="fog"></div>
+  <div class="title-wrap">
+    <div class="title-main">OUTBREAK</div>
+    <div class="title-sub">5 <span>VS</span> 5 &nbsp;|&nbsp; SURVIVAL PROTOCOL</div>
+  </div>
+  <div class="faction-row">
+    <div class="faction-card" id="card-zombie">
+      <div class="stripe"></div>
+      <div class="icon">🧟</div>
+      <h2>ZOMBIE</h2>
+      <p>感染者側で出撃。近接特化。<br>噛みつき / 引っ掻き / 咆哮で<br>人間陣営を殲滅せよ。</p>
     </div>
-
-    <!-- 2. ロード画面 -->
-    <div id="loading-screen">
-        <h2>LOADING MAP...</h2>
-        <div class="progress-bar-bg"><div class="progress-bar" id="pBar"></div></div>
+    <div class="faction-card" id="card-human">
+      <div class="stripe"></div>
+      <div class="icon">🔫</div>
+      <h2>SURVIVOR</h2>
+      <p>人間側で出撃。武装可能。<br>銃 / 殴打 / 蹴りを駆使し<br>ゾンビ陣営を一掃せよ。</p>
     </div>
+  </div>
+  <div class="hint-line">SELECT YOUR SIDE — 5 ALLIES WILL DEPLOY WITH YOU</div>
+</div>
 
-    <!-- 3. ゲームHUD -->
-    <div id="game-hud">
-        <div class="hud-top">
-            <div id="teamInfo">陣営: -</div>
-            <div id="hpInfo">HP: 100</div>
-            <div id="ammoInfo">弾薬: -</div>
-        </div>
+<!-- LOADING -->
+<div id="screen-loading" class="screen hidden">
+  <div class="load-title">DEPLOYING</div>
+  <div class="load-bar-outer"><div class="load-bar-inner" id="loadBarInner"></div></div>
+  <div class="load-tip" id="loadTip">マップを生成中...</div>
+</div>
 
-        <div id="countdown-display">5</div>
+<!-- RESULT -->
+<div id="screen-result" class="screen hidden">
+  <div class="result-title" id="resultTitle">WIN</div>
+  <div class="result-sub" id="resultSub">HUMANS ELIMINATED</div>
+  <button class="btn-restart" id="btnRestart">RETURN TO SELECT</button>
+</div>
 
-        <!-- 十字キーUI -->
-        <div id="dpad-base">
-            <div id="dpad-knob"></div>
-        </div>
+<!-- HUD -->
+<div id="hud">
+  <div class="crosshair"></div>
+  <div class="hud-bottomleft">
+    <div class="hp-label">HEALTH</div>
+    <div class="hp-bar-outer"><div class="hp-bar-inner" id="hpBar"></div></div>
+    <div class="faction-tag" id="factionTag">HUMAN</div>
+  </div>
+  <div class="hud-bottomright">
+    <div class="weapon-name" id="weaponName">UNARMED</div>
+    <div class="ammo-count" id="ammoCount">--<span class="reserve" id="reserveCount"> / --</span></div>
+    <div class="reload-tip" id="reloadTip"></div>
+  </div>
+  <div class="hud-topcenter">
+    <div class="kill-count">KILLS <b id="killCount">0</b> &nbsp;/&nbsp; ALLIES <b id="allyCount">5</b> &nbsp;/&nbsp; ENEMIES <b id="enemyCount">5</b></div>
+  </div>
+  <div class="hud-topright">
+    <div id="abilityLine"></div>
+  </div>
+  <div id="stunFlash"></div>
+  <div id="hitFlash"></div>
+  <div id="centerMsg"></div>
+</div>
 
-        <div class="action-btns" id="actionContainer"></div>
-    </div>
+<div id="pauseOverlay"><p>PAUSED</p><span>クリックして再開</span></div>
 
-    <!-- 死亡画面UI -->
-    <div id="death-screen">
-        <h1>死んだ！</h1>
-        <div class="death-btns">
-            <button class="death-btn" onclick="startSpectator()">観戦する 👁️</button>
-            <button class="death-btn" onclick="resetToHome()">ホーム画面に戻る 🏠</button>
-        </div>
-    </div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+(function(){
+"use strict";
 
-    <!-- 勝敗結果画面 -->
-    <div id="result-banner"></div>
+/* =========================================================
+   CONFIG
+========================================================= */
+const CFG = {
+  mapHalf: 46,
+  gunDamage: 26,
+  punchDamage: 12,
+  kickDamage: 18,
+  biteDamage: 24,
+  scratchDamage: 14,
+  screamStun: 1.5,
+  screamRadius: 9,
+  screamCooldown: 7,
+  meleeRange: 2.3,
+  gunRange: 45,
+  fireCooldown: 0.28,
+  meleeCooldown: 0.7,
+  reloadTime: 1.5,
+  magSize: 10,
+  moveSpeed: 6.2,
+  npcThinkInterval: 0.25,
+  npcAimError: 0.09,
+};
 
-    <!-- 観戦切り替えボタン -->
-    <div id="spectate-hud">
-        <button class="act-btn" onclick="nextSpectateTarget()">視点切り替え 👁️</button>
-    </div>
+let renderer, scene, camera, clock;
+let entities = [];      // all characters
+let pickups = [];       // gun/ammo pickups
+let obstacles = [];     // {x,z,radius}
+let player = null;
+let playerFaction = 'human';
+let gameActive = false;
+let paused = false;
+let yaw = 0, pitch = -0.12;
+let keys = {};
+let mouseDown = {left:false, right:false};
+let entIdCounter = 0;
+let raycaster = new THREE.Raycaster();
+let audioCtx = null;
 
-    <canvas id="fxCanvas"></canvas>
+/* =========================================================
+   AUDIO (simple synthesized SFX, no external assets)
+========================================================= */
+function ac(){
+  if(!audioCtx){ audioCtx = new (window.AudioContext||window.webkitAudioContext)(); }
+  return audioCtx;
+}
+function beep(freq, dur, type, vol, sweepTo){
+  try{
+    const ctx = ac();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = type || 'square';
+    osc.frequency.setValueAtTime(freq, ctx.currentTime);
+    if(sweepTo) osc.frequency.exponentialRampToValueAtTime(sweepTo, ctx.currentTime+dur);
+    gain.gain.setValueAtTime(vol||0.2, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime+dur);
+    osc.connect(gain); gain.connect(ctx.destination);
+    osc.start(); osc.stop(ctx.currentTime+dur);
+  }catch(e){}
+}
+function noiseBurst(dur, vol){
+  try{
+    const ctx = ac();
+    const bufferSize = ctx.sampleRate*dur;
+    const buffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
+    const data = buffer.getChannelData(0);
+    for(let i=0;i<bufferSize;i++){ data[i] = (Math.random()*2-1)*(1-i/bufferSize); }
+    const src = ctx.createBufferSource(); src.buffer = buffer;
+    const gain = ctx.createGain(); gain.gain.setValueAtTime(vol||0.3, ctx.currentTime);
+    src.connect(gain); gain.connect(ctx.destination);
+    src.start();
+  }catch(e){}
+}
+const SFX = {
+  gunshot: ()=>{ noiseBurst(0.12,0.35); beep(140,0.08,'sawtooth',0.25,60); },
+  punch: ()=>{ beep(90,0.1,'square',0.2,50); },
+  kick: ()=>{ beep(70,0.14,'square',0.25,35); },
+  bite: ()=>{ beep(160,0.15,'sawtooth',0.2,60); noiseBurst(0.08,0.15); },
+  scratch: ()=>{ beep(300,0.08,'sawtooth',0.15,180); },
+  scream: ()=>{ beep(220,0.9,'sawtooth',0.22,90); },
+  reload: ()=>{ beep(400,0.06,'square',0.1,300); },
+  hurt: ()=>{ beep(180,0.12,'square',0.18,90); },
+  pickup: ()=>{ beep(520,0.08,'sine',0.15,900); },
+  death: ()=>{ beep(120,0.4,'sawtooth',0.2,30); }
+};
 
-    <script>
-        document.addEventListener('touchmove', (e) => e.preventDefault(), { passive: false });
+/* =========================================================
+   INIT THREE
+========================================================= */
+function initThree(){
+  renderer = new THREE.WebGLRenderer({canvas:document.getElementById('gameCanvas'), antialias:true});
+  renderer.setPixelRatio(Math.min(devicePixelRatio,2));
+  renderer.setSize(innerWidth, innerHeight);
+  renderer.shadowMap.enabled = true;
 
-        // --- 効果音再生 ---
-        const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-        function playSE(freq = 600, type = 'sine', duration = 0.1) {
-            if (audioCtx.state === 'suspended') audioCtx.resume();
-            const osc = audioCtx.createOscillator();
-            const gain = audioCtx.createGain();
-            osc.type = type;
-            osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
-            gain.gain.setValueAtTime(0.2, audioCtx.currentTime);
-            gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + duration);
-            osc.connect(gain); gain.connect(audioCtx.destination);
-            osc.start(); osc.stop(audioCtx.currentTime + duration);
+  scene = new THREE.Scene();
+  scene.background = new THREE.Color(0x1b1a19);
+  scene.fog = new THREE.FogExp2(0x1b1a19, 0.014);
+
+  camera = new THREE.PerspectiveCamera(68, innerWidth/innerHeight, 0.1, 400);
+
+  clock = new THREE.Clock();
+
+  window.addEventListener('resize', ()=>{
+    camera.aspect = innerWidth/innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(innerWidth, innerHeight);
+  });
+}
+
+function buildWorld(faction){
+  // clear previous
+  while(scene.children.length){ scene.remove(scene.children[0]); }
+  entities = []; pickups = []; obstacles = []; entIdCounter = 0;
+
+  const hemi = new THREE.HemisphereLight(0x8a8f7a, 0x1a1512, 0.9);
+  scene.add(hemi);
+  const sun = new THREE.DirectionalLight(0xffdcb0, 0.9);
+  sun.position.set(30,50,10);
+  sun.castShadow = true;
+  sun.shadow.mapSize.set(1024,1024);
+  sun.shadow.camera.left=-60; sun.shadow.camera.right=60; sun.shadow.camera.top=60; sun.shadow.camera.bottom=-60;
+  scene.add(sun);
+
+  const groundGeo = new THREE.PlaneGeometry(CFG.mapHalf*2+20, CFG.mapHalf*2+20, 1,1);
+  const groundMat = new THREE.MeshStandardMaterial({color:0x33362c, roughness:1});
+  const ground = new THREE.Mesh(groundGeo, groundMat);
+  ground.rotation.x = -Math.PI/2;
+  ground.receiveShadow = true;
+  scene.add(ground);
+
+  // scattered obstacles (rubble / crates) - cylinders for simple collision
+  const obsMat = new THREE.MeshStandardMaterial({color:0x4b463d, roughness:0.9});
+  for(let i=0;i<16;i++){
+    const r = 1.3 + Math.random()*2.2;
+    const h = 1.5 + Math.random()*3;
+    const x = (Math.random()*2-1)*CFG.mapHalf*0.85;
+    const z = (Math.random()*2-1)*CFG.mapHalf*0.85;
+    if(Math.abs(x)<8 && Math.abs(z)<8) continue;
+    const geo = new THREE.CylinderGeometry(r,r*1.05,h,7);
+    const mesh = new THREE.Mesh(geo, obsMat);
+    mesh.position.set(x,h/2,z);
+    mesh.castShadow = true; mesh.receiveShadow = true;
+    scene.add(mesh);
+    obstacles.push({x,z,radius:r});
+  }
+
+  // pickups: guns
+  const gunGeo = new THREE.BoxGeometry(0.5,0.2,0.9);
+  const gunMat = new THREE.MeshStandardMaterial({color:0x1c1c1c, metalness:0.6, roughness:0.3});
+  for(let i=0;i<7;i++){
+    const x = (Math.random()*2-1)*CFG.mapHalf*0.8;
+    const z = (Math.random()*2-1)*CFG.mapHalf*0.8;
+    const mesh = new THREE.Mesh(gunGeo, gunMat.clone());
+    mesh.position.set(x,0.55,z);
+    mesh.castShadow=true;
+    scene.add(mesh);
+    pickups.push({type:'gun', mesh, x, z, active:true, spin:Math.random()*10});
+  }
+  // pickups: ammo
+  const ammoGeo = new THREE.BoxGeometry(0.35,0.35,0.35);
+  const ammoMat = new THREE.MeshStandardMaterial({color:0xd9b23a, metalness:0.4, roughness:0.4});
+  for(let i=0;i<12;i++){
+    const x = (Math.random()*2-1)*CFG.mapHalf*0.8;
+    const z = (Math.random()*2-1)*CFG.mapHalf*0.8;
+    const mesh = new THREE.Mesh(ammoGeo, ammoMat.clone());
+    mesh.position.set(x,0.5,z);
+    mesh.castShadow=true;
+    scene.add(mesh);
+    pickups.push({type:'ammo', mesh, x, z, active:true, spin:Math.random()*10});
+  }
+
+  // spawn zones
+  const humanSpawn = new THREE.Vector3(-CFG.mapHalf*0.75, 0, -CFG.mapHalf*0.75);
+  const zombieSpawn = new THREE.Vector3(CFG.mapHalf*0.75, 0, CFG.mapHalf*0.75);
+
+  const humanTeam = [];
+  const zombieTeam = [];
+  for(let i=0;i<5;i++){
+    const hp = spawnEntity('human', humanSpawn, i===0 && faction==='human');
+    humanTeam.push(hp);
+    const zp = spawnEntity('zombie', zombieSpawn, i===0 && faction==='zombie');
+    zombieTeam.push(zp);
+  }
+
+  // human NPC allies/enemies start pre-armed so combat is viable offline.
+  // the player character (if human) must find a pistol on the map, per spec.
+  humanTeam.forEach(e=>{
+    if(e.isPlayer) return;
+    e.hasGun = true; e.ammoInGun = CFG.magSize; e.reserveAmmo = CFG.magSize;
+  });
+
+  if(faction==='human'){ player = humanTeam[0]; } else { player = zombieTeam[0]; }
+  player.isPlayer = true;
+}
+
+function spawnEntity(faction, centerPos, isPlayerSlot){
+  const group = new THREE.Group();
+  const bodyColor = faction==='zombie' ? 0x5c7a34 : 0x8a7457;
+  const headColor = faction==='zombie' ? 0x6f8f42 : 0xd9b899;
+
+  const body = new THREE.Mesh(
+    new THREE.CapsuleGeometry(0.42, 1.05, 4, 8),
+    new THREE.MeshStandardMaterial({color:bodyColor, roughness:0.8})
+  );
+  body.position.y = 1.05; body.castShadow = true;
+  group.add(body);
+
+  const head = new THREE.Mesh(
+    new THREE.SphereGeometry(0.28, 10, 10),
+    new THREE.MeshStandardMaterial({color:headColor, roughness:0.7})
+  );
+  head.position.y = 1.8; head.castShadow = true;
+  group.add(head);
+
+  if(faction==='human'){
+    const gunMesh = new THREE.Mesh(
+      new THREE.BoxGeometry(0.16,0.16,0.55),
+      new THREE.MeshStandardMaterial({color:0x1a1a1a, metalness:0.6})
+    );
+    gunMesh.position.set(0.35, 1.15, 0.35);
+    gunMesh.visible = false;
+    group.add(gunMesh);
+    group.userData.gunMesh = gunMesh;
+  }
+
+  if(isPlayerSlot){
+    const ringMat = new THREE.MeshBasicMaterial({color: faction==='zombie'?0x7fb238:0xe8303b});
+    const ring = new THREE.Mesh(new THREE.RingGeometry(0.5,0.6,16), ringMat);
+    ring.rotation.x=-Math.PI/2; ring.position.y=0.05;
+    group.add(ring);
+  }
+
+  const spawnRadius = 6;
+  const angle = Math.random()*Math.PI*2;
+  const dist = Math.random()*spawnRadius;
+  group.position.set(
+    THREE.MathUtils.clamp(centerPos.x + Math.cos(angle)*dist, -CFG.mapHalf, CFG.mapHalf),
+    0,
+    THREE.MathUtils.clamp(centerPos.z + Math.sin(angle)*dist, -CFG.mapHalf, CFG.mapHalf)
+  );
+  scene.add(group);
+
+  const ent = {
+    id: entIdCounter++,
+    faction, group,
+    hp: 100, maxHp: 100,
+    alive: true,
+    isPlayer: !!isPlayerSlot,
+    speed: CFG.moveSpeed * (0.85+Math.random()*0.3),
+    hasGun:false, ammoInGun:0, reserveAmmo:0, isReloading:false, reloadTimer:0,
+    fireTimer:0, meleeTimer:0, screamTimer:0, screamCdTimer:0, stunTimer:0,
+    thinkTimer: Math.random()*CFG.npcThinkInterval,
+    aimTarget: null,
+    yaw: Math.atan2(centerPos.x-group.position.x, centerPos.z-group.position.z) || 0,
+    flashTimer:0, bodyMesh: body, headMesh: head
+  };
+  return ent;
+  function _push(){ entities.push(ent); }
+}
+// note: need to push entities - fix below by wrapping
+
+/* =========================================================
+   Since spawnEntity above builds but must register, wrap it
+========================================================= */
+const _origSpawn = spawnEntity;
+spawnEntity = function(faction, centerPos, isPlayerSlot){
+  const e = _origSpawn(faction, centerPos, isPlayerSlot);
+  entities.push(e);
+  return e;
+};
+
+/* =========================================================
+   INPUT
+========================================================= */
+function setupInput(){
+  document.addEventListener('keydown', e=>{ keys[e.code]=true;
+    if(e.code==='KeyR') tryReload();
+    if(e.code==='KeyQ') tryScream();
+  });
+  document.addEventListener('keyup', e=>{ keys[e.code]=false; });
+
+  const canvas = document.getElementById('gameCanvas');
+  canvas.addEventListener('mousedown', e=>{
+    if(!gameActive || paused) return;
+    if(e.button===0){ mouseDown.left = true; doPrimaryAction(); }
+    if(e.button===2){ mouseDown.right = true; doSecondaryAction(); }
+  });
+  canvas.addEventListener('mouseup', e=>{
+    if(e.button===0) mouseDown.left=false;
+    if(e.button===2) mouseDown.right=false;
+  });
+  canvas.addEventListener('contextmenu', e=>e.preventDefault());
+
+  document.addEventListener('mousemove', e=>{
+    if(document.pointerLockElement !== canvas) return;
+    yaw -= e.movementX * 0.0022;
+    pitch -= e.movementY * 0.0022;
+    pitch = THREE.MathUtils.clamp(pitch, -0.7, 0.55);
+  });
+
+  document.addEventListener('pointerlockchange', ()=>{
+    if(document.pointerLockElement !== canvas && gameActive){
+      paused = true;
+      document.getElementById('pauseOverlay').style.display='flex';
+    } else if(document.pointerLockElement === canvas){
+      paused = false;
+      document.getElementById('pauseOverlay').style.display='none';
+    }
+  });
+
+  document.getElementById('pauseOverlay').addEventListener('click', ()=>{
+    canvas.requestPointerLock();
+  });
+
+  canvas.addEventListener('click', ()=>{
+    if(gameActive && document.pointerLockElement !== canvas){
+      canvas.requestPointerLock();
+    }
+  });
+}
+
+/* =========================================================
+   ACTIONS
+========================================================= */
+function forwardVec(entYaw){
+  return new THREE.Vector3(-Math.sin(entYaw), 0, -Math.cos(entYaw));
+}
+
+function doPrimaryAction(){
+  if(!player || !player.alive || player.stunTimer>0 || player.isReloading) return;
+  if(player.faction==='human'){
+    if(player.hasGun && player.ammoInGun>0){ fireGun(player); }
+    else { meleeAttack(player, CFG.punchDamage, 'punch'); }
+  } else {
+    meleeAttack(player, CFG.biteDamage, 'bite');
+  }
+}
+function doSecondaryAction(){
+  if(!player || !player.alive || player.stunTimer>0 || player.isReloading) return;
+  if(player.faction==='human'){
+    meleeAttack(player, CFG.kickDamage, 'kick');
+  } else {
+    meleeAttack(player, CFG.scratchDamage, 'scratch');
+  }
+}
+function tryReload(){
+  if(!player || player.faction!=='human' || !player.hasGun) return;
+  if(player.isReloading || player.ammoInGun>=CFG.magSize || player.reserveAmmo<=0) return;
+  player.isReloading = true;
+  player.reloadTimer = CFG.reloadTime;
+  SFX.reload();
+  showCenterMsg('RELOADING...');
+}
+function tryScream(){
+  if(!player || player.faction!=='zombie' || player.screamCdTimer>0 || player.stunTimer>0) return;
+  doScream(player);
+}
+
+function fireGun(ent){
+  if(ent.fireTimer>0) return;
+  ent.fireTimer = CFG.fireCooldown;
+  ent.ammoInGun--;
+  SFX.gunshot();
+  if(ent.isPlayer) flashHit(false);
+
+  let dir, origin;
+  if(ent.isPlayer){
+    origin = camera.position.clone();
+    dir = new THREE.Vector3();
+    camera.getWorldDirection(dir);
+  } else {
+    origin = ent.group.position.clone().add(new THREE.Vector3(0,1.5,0));
+    const f = forwardVec(ent.yaw);
+    const err = (Math.random()*2-1)*CFG.npcAimError;
+    dir = f.clone().applyAxisAngle(new THREE.Vector3(0,1,0), err);
+  }
+  const targets = entities.filter(e=>e.alive && e.faction!==ent.faction);
+  let closest=null, closestDist=CFG.gunRange;
+  const rc = new THREE.Vector3();
+  targets.forEach(t=>{
+    const toT = t.group.position.clone().add(new THREE.Vector3(0,1.2,0)).sub(origin);
+    const dist = toT.length();
+    if(dist>closestDist) return;
+    const dot = toT.clone().normalize().dot(dir);
+    if(dot > 0.965){ if(dist<closestDist){ closest=t; closestDist=dist; } }
+  });
+  if(closest){ dealDamage(closest, CFG.gunDamage, ent); }
+}
+
+function meleeAttack(ent, dmg, kind){
+  if(ent.meleeTimer>0) return;
+  ent.meleeTimer = CFG.meleeCooldown;
+  if(kind==='punch') SFX.punch();
+  else if(kind==='kick') SFX.kick();
+  else if(kind==='bite') SFX.bite();
+  else if(kind==='scratch') SFX.scratch();
+  if(ent.isPlayer) showCenterMsg(kind.toUpperCase());
+
+  const targets = entities.filter(e=>e.alive && e.faction!==ent.faction);
+  let hit=null, hitDist=CFG.meleeRange;
+  const f = forwardVec(ent.yaw);
+  const origin = ent.group.position;
+  targets.forEach(t=>{
+    const to = t.group.position.clone().sub(origin);
+    const dist = to.length();
+    if(dist>hitDist) return;
+    const dot = to.clone().normalize().dot(f);
+    if(dot>0.5){ hit=t; hitDist=dist; }
+  });
+  if(hit){ dealDamage(hit, dmg, ent); }
+}
+
+function doScream(ent){
+  ent.screamCdTimer = CFG.screamCooldown;
+  SFX.scream();
+  showCenterMsg('SCREAM!!');
+  const victims = entities.filter(e=>e.alive && e.faction!==ent.faction);
+  victims.forEach(v=>{
+    const d = v.group.position.distanceTo(ent.group.position);
+    if(d <= CFG.screamRadius){
+      v.stunTimer = Math.max(v.stunTimer, CFG.screamStun);
+      if(v.isPlayer){ flashStun(); showCenterMsg('STUNNED!'); }
+    }
+  });
+}
+
+function dealDamage(target, dmg, attacker){
+  if(!target.alive) return;
+  target.hp -= dmg;
+  target.flashTimer = 0.15;
+  if(target.isPlayer){ SFX.hurt(); flashHit(true); }
+  if(target.hp <= 0){
+    killEntity(target);
+    if(attacker && attacker.isPlayer){ killCountUI(); }
+  }
+}
+
+function killEntity(ent){
+  ent.alive = false;
+  SFX.death();
+  ent.group.rotation.z = Math.PI/2.1;
+  ent.group.position.y = 0.2;
+  if(ent.isPlayer && gameActive){
+    endGame(false);
+  }
+}
+
+let playerKills = 0;
+function killCountUI(){ playerKills++; document.getElementById('killCount').textContent = playerKills; }
+
+/* =========================================================
+   NPC AI
+========================================================= */
+function updateNpcAI(ent, dt){
+  ent.thinkTimer -= dt;
+  const targets = entities.filter(e=>e.alive && e.faction!==ent.faction);
+  if(targets.length===0) return;
+  let nearest=null, nd=Infinity;
+  targets.forEach(t=>{
+    const d = t.group.position.distanceTo(ent.group.position);
+    if(d<nd){ nd=d; nearest=t; }
+  });
+  ent.aimTarget = nearest;
+  if(!nearest) return;
+
+  const toT = nearest.group.position.clone().sub(ent.group.position);
+  const dist = toT.length();
+  ent.yaw = Math.atan2(-toT.x, -toT.z);
+
+  if(ent.stunTimer>0) return;
+
+  if(ent.faction==='human'){
+    if(ent.hasGun && ent.ammoInGun>0){
+      if(dist < CFG.gunRange*0.9){ fireGun(ent); }
+      else { moveTowards(ent, nearest.group.position, dt); }
+    } else if(ent.hasGun && ent.ammoInGun<=0 && ent.reserveAmmo>0 && !ent.isReloading){
+      ent.isReloading = true; ent.reloadTimer = CFG.reloadTime;
+    } else if(dist > CFG.meleeRange*0.85){
+      moveTowards(ent, nearest.group.position, dt);
+    } else {
+      meleeAttack(ent, Math.random()<0.5?CFG.punchDamage:CFG.kickDamage, Math.random()<0.5?'punch':'kick');
+    }
+  } else {
+    // zombie
+    const nearEnemies = targets.filter(t=> t.group.position.distanceTo(ent.group.position) < CFG.screamRadius).length;
+    if(nearEnemies>=2 && ent.screamCdTimer<=0 && Math.random()<0.02){
+      doScream(ent);
+    } else if(dist > CFG.meleeRange*0.85){
+      moveTowards(ent, nearest.group.position, dt);
+    } else {
+      meleeAttack(ent, Math.random()<0.6?CFG.biteDamage:CFG.scratchDamage, Math.random()<0.6?'bite':'scratch');
+    }
+  }
+}
+
+function moveTowards(ent, targetPos, dt){
+  const dir = targetPos.clone().sub(ent.group.position);
+  dir.y = 0;
+  if(dir.lengthSq()<0.0001) return;
+  dir.normalize();
+  const step = ent.speed*dt;
+  const newPos = ent.group.position.clone().addScaledVector(dir, step);
+  resolveObstacles(newPos, 0.5);
+  newPos.x = THREE.MathUtils.clamp(newPos.x, -CFG.mapHalf, CFG.mapHalf);
+  newPos.z = THREE.MathUtils.clamp(newPos.z, -CFG.mapHalf, CFG.mapHalf);
+  ent.group.position.copy(newPos);
+}
+
+function resolveObstacles(pos, radius){
+  obstacles.forEach(o=>{
+    const dx = pos.x-o.x, dz = pos.z-o.z;
+    const dist = Math.sqrt(dx*dx+dz*dz);
+    const minD = o.radius+radius;
+    if(dist < minD && dist>0.0001){
+      const push = (minD-dist);
+      pos.x += (dx/dist)*push;
+      pos.z += (dz/dist)*push;
+    }
+  });
+}
+
+/* =========================================================
+   PLAYER MOVEMENT
+========================================================= */
+function updatePlayerMovement(dt){
+  if(!player || !player.alive) return;
+  player.group.rotation.y = yaw;
+  player.yaw = yaw;
+
+  if(player.stunTimer>0) return;
+
+  const f = forwardVec(yaw);
+  const r = new THREE.Vector3(Math.cos(yaw),0,-Math.sin(yaw));
+  let mv = new THREE.Vector3();
+  if(keys['KeyW']) mv.add(f);
+  if(keys['KeyS']) mv.sub(f);
+  if(keys['KeyD']) mv.add(r);
+  if(keys['KeyA']) mv.sub(r);
+  if(mv.lengthSq()>0){
+    mv.normalize();
+    const newPos = player.group.position.clone().addScaledVector(mv, player.speed*dt);
+    resolveObstacles(newPos, 0.5);
+    newPos.x = THREE.MathUtils.clamp(newPos.x, -CFG.mapHalf, CFG.mapHalf);
+    newPos.z = THREE.MathUtils.clamp(newPos.z, -CFG.mapHalf, CFG.mapHalf);
+    player.group.position.copy(newPos);
+  }
+}
+
+function updateCamera(){
+  if(!player) return;
+  const pPos = player.group.position.clone().add(new THREE.Vector3(0,1.5,0));
+  const f = forwardVec(yaw);
+  const camDist = 5.2;
+  const camHeight = 2.2 + Math.max(0,-pitch)*3.5;
+  camera.position.copy(pPos).addScaledVector(f, -camDist);
+  camera.position.y = pPos.y + camHeight;
+  const lookTarget = pPos.clone().addScaledVector(f, 12);
+  lookTarget.y = pPos.y + pitch*11;
+  camera.lookAt(lookTarget);
+}
+
+/* =========================================================
+   PICKUPS
+========================================================= */
+function updatePickups(dt){
+  pickups.forEach(p=>{
+    if(!p.active) return;
+    p.spin += dt*2;
+    p.mesh.position.y = (p.type==='gun'?0.5:0.45) + Math.sin(p.spin*2)*0.08;
+    p.mesh.rotation.y += dt*1.2;
+    if(player && player.alive && player.faction==='human'){
+      const d = Math.hypot(player.group.position.x-p.x, player.group.position.z-p.z);
+      if(d < 1.4){
+        if(p.type==='gun'){
+          if(!player.hasGun){
+            player.hasGun = true;
+            player.ammoInGun = Math.min(CFG.magSize, player.ammoInGun + CFG.magSize);
+            SFX.pickup();
+            showCenterMsg('PISTOL ACQUIRED');
+            p.active=false; p.mesh.visible=false;
+          }
+        } else {
+          if(player.hasGun || true){
+            player.reserveAmmo += CFG.magSize;
+            SFX.pickup();
+            showCenterMsg('+10 AMMO');
+            p.active=false; p.mesh.visible=false;
+          }
         }
-
-        // --- ゲームステート ---
-        let playerTeam = 'human';
-        let scene, camera, renderer;
-        let player, playerBody, gunMesh, muzzleFlash;
-        let entities = [];
-        let ammoBoxes = [];
-        let obstacles = [];
-        
-        let playerStats = { hp: 100, maxHp: 100, ammo: 10, reserveAmmo: 20, isStunned: false, stunTimer: 0 };
-        let cameraAngleY = 0, cameraAngleX = 0.3;
-
-        let gameStarted = false;
-        let gameEnded = false;
-        let isSpectating = false;
-        let spectateIndex = 0;
-        let deathScreenShown = false;
-
-        let roarCooldownTimer = 0;
-        let lastTime = performance.now();
-
-        let recoilZ = 0;
-        let muzzleFlashTimer = 0;
-
-        let dpadInput = { x: 0, y: 0 };
-        let touchDpadId = null, touchLookId = null;
-        let lastTouchX = 0, lastTouchY = 0;
-        let hitRing = { active: false, x: 0, y: 0, progress: 0 };
-
-        // 1. 陣営選択 ＆ ロード
-        function selectTeam(team) {
-            playSE(800, 'square', 0.15);
-            playerTeam = team;
-            document.getElementById('select-screen').style.display = 'none';
-            document.getElementById('loading-screen').style.display = 'flex';
-
-            let pBar = document.getElementById('pBar');
-            let progress = 0;
-            let timer = setInterval(() => {
-                progress += 20;
-                pBar.style.width = progress + '%';
-                if (progress >= 100) {
-                    clearInterval(timer);
-                    document.getElementById('loading-screen').style.display = 'none';
-                    initGame();
-                }
-            }, 100);
-        }
-
-        // 2. 3Dゲーム初期化
-        function initGame() {
-            // 変数初期化
-            entities = []; ammoBoxes = []; obstacles = [];
-            gameStarted = false; gameEnded = false; isSpectating = false; deathScreenShown = false;
-            roarCooldownTimer = 0; playerStats.ammo = 10; playerStats.reserveAmmo = 20;
-
-            document.getElementById('game-hud').style.display = 'block';
-            document.getElementById('death-screen').style.display = 'none';
-            document.getElementById('result-banner').style.display = 'none';
-            document.getElementById('spectate-hud').style.display = 'none';
-            document.getElementById('dpad-base').style.display = 'block';
-            document.getElementById('actionContainer').style.display = 'flex';
-            document.getElementById('teamInfo').innerText = `陣営: ${playerTeam === 'human' ? '人間' : 'ゾンビ'}`;
-            
-            setupHUDButtons();
-
-            if (renderer) {
-                renderer.domElement.remove();
-            }
-
-            scene = new THREE.Scene();
-            scene.background = new THREE.Color(0x111115);
-            scene.fog = new THREE.FogExp2(0x111115, 0.02);
-
-            camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 1000);
-            renderer = new THREE.WebGLRenderer({ antialias: true });
-            renderer.setSize(window.innerWidth, window.innerHeight);
-            document.body.appendChild(renderer.domElement);
-
-            const ambLight = new THREE.AmbientLight(0xffffff, 0.6);
-            scene.add(ambLight);
-            const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
-            dirLight.position.set(20, 40, 20);
-            scene.add(dirLight);
-
-            const floorGeo = new THREE.PlaneGeometry(100, 100);
-            const floorMat = new THREE.MeshStandardMaterial({ color: 0x222225 });
-            const floor = new THREE.Mesh(floorGeo, floorMat);
-            floor.rotation.x = -Math.PI / 2;
-            scene.add(floor);
-
-            createObstacles();
-            createAmmoBoxes();
-            spawnEntities();
-            setupTouchControls();
-
-            window.addEventListener('resize', () => {
-                camera.aspect = window.innerWidth / window.innerHeight;
-                camera.updateProjectionMatrix();
-                renderer.setSize(window.innerWidth, window.innerHeight);
-            });
-
-            startCountdown();
-            lastTime = performance.now();
-            animate();
-        }
-
-        // 5秒カウントダウン
-        function startCountdown() {
-            let count = 5;
-            const display = document.getElementById('countdown-display');
-            display.style.display = 'block';
-            display.innerText = count;
-
-            let timer = setInterval(() => {
-                count--;
-                if (count > 0) {
-                    display.innerText = count;
-                    playSE(600, 'sine', 0.1);
-                } else if (count === 0) {
-                    display.innerText = "スタート！";
-                    playSE(1000, 'square', 0.25);
-                    gameStarted = true;
-                } else {
-                    clearInterval(timer);
-                    display.style.display = 'none';
-                }
-            }, 1000);
-        }
-
-        function createObstacles() {
-            const obsData = [
-                { x: -8, z: 0, w: 4, h: 4, d: 4 },
-                { x: 8, z: 0, w: 4, h: 4, d: 4 },
-                { x: 0, z: -8, w: 8, h: 4, d: 3 },
-                { x: 0, z: 8, w: 8, h: 4, d: 3 }
-            ];
-            const mat = new THREE.MeshStandardMaterial({ color: 0x444450 });
-
-            obsData.forEach(data => {
-                const geo = new THREE.BoxGeometry(data.w, data.h, data.d);
-                const mesh = new THREE.Mesh(geo, mat);
-                mesh.position.set(data.x, data.h / 2, data.z);
-                scene.add(mesh);
-
-                mesh.geometry.computeBoundingBox();
-                obstacles.push({
-                    box: new THREE.Box3().setFromObject(mesh),
-                    mesh: mesh
-                });
-            });
-        }
-
-        function createAmmoBoxes() {
-            const mat = new THREE.MeshStandardMaterial({ color: 0xffcc00 });
-            const positions = [{ x: -4, z: -2 }, { x: 4, z: 2 }];
-            positions.forEach(pos => {
-                const geo = new THREE.BoxGeometry(0.8, 0.6, 0.8);
-                const mesh = new THREE.Mesh(geo, mat);
-                mesh.position.set(pos.x, 0.3, pos.z);
-                scene.add(mesh);
-                ammoBoxes.push(mesh);
-            });
-        }
-
-        // スポーン処理
-        function spawnEntities() {
-            const humanMat = new THREE.MeshStandardMaterial({ color: 0x2196f3 });
-            const zombieMat = new THREE.MeshStandardMaterial({ color: 0x4caf50 });
-            const isPlayerHuman = (playerTeam === 'human');
-            const pGeo = new THREE.CylinderGeometry(0.5, 0.5, 1.8);
-            const spawnXs = [-8, -4, 0, 4, 8];
-
-            // 1. 人間チーム生成 (移動速度を適正化: 0.08)
-            for (let i = 0; i < 5; i++) {
-                const mesh = new THREE.Mesh(pGeo, humanMat);
-                mesh.position.set(spawnXs[i], 0.9, 18);
-                scene.add(mesh);
-
-                if (isPlayerHuman && i === 2) {
-                    playerBody = mesh;
-                    attachGunToPlayer();
-                    player = {
-                        mesh: playerBody, isPlayer: true, team: 'human',
-                        hp: 100, maxHp: 100, speed: 0.10, stunTimer: 0, isDead: false
-                    };
-                    entities.push(player);
-                } else {
-                    entities.push({
-                        mesh: mesh, isPlayer: false, team: 'human',
-                        hp: 120, maxHp: 120, speed: 0.08, cooldown: 0, stunTimer: 0, isDead: false
-                    });
-                }
-            }
-
-            // 2. ゾンビチーム生成 (移動速度を適正化: 0.085)
-            for (let i = 0; i < 5; i++) {
-                const mesh = new THREE.Mesh(pGeo, zombieMat);
-                mesh.position.set(spawnXs[i], 0.9, -18);
-                scene.add(mesh);
-
-                if (!isPlayerHuman && i === 2) {
-                    playerBody = mesh;
-                    player = {
-                        mesh: playerBody, isPlayer: true, team: 'zombie',
-                        hp: 100, maxHp: 100, speed: 0.10, stunTimer: 0, isDead: false
-                    };
-                    entities.push(player);
-                } else {
-                    entities.push({
-                        mesh: mesh, isPlayer: false, team: 'zombie',
-                        hp: 60, maxHp: 60, speed: 0.085, cooldown: 0, stunTimer: 0, isDead: false
-                    });
-                }
-            }
-        }
-
-        function attachGunToPlayer() {
-            const gunGroup = new THREE.Group();
-            const gunBodyGeo = new THREE.BoxGeometry(0.12, 0.18, 0.5);
-            const gunMat = new THREE.MeshStandardMaterial({ color: 0x111111 });
-            const gunBody = new THREE.Mesh(gunBodyGeo, gunMat);
-            gunGroup.add(gunBody);
-
-            const flashGeo = new THREE.SphereGeometry(0.15, 8, 8);
-            const flashMat = new THREE.MeshBasicMaterial({ color: 0xffaa00 });
-            muzzleFlash = new THREE.Mesh(flashGeo, flashMat);
-            muzzleFlash.position.set(0, 0.05, 0.35);
-            muzzleFlash.visible = false;
-            gunGroup.add(muzzleFlash);
-
-            gunGroup.position.set(0.35, 0.2, 0.4);
-            playerBody.add(gunGroup);
-            gunMesh = gunGroup;
-        }
-
-        function setupHUDButtons() {
-            const container = document.getElementById('actionContainer');
-            container.innerHTML = '';
-
-            if (playerTeam === 'human') {
-                container.innerHTML = `
-                    <button class="act-btn" onclick="humanShoot()">射撃 🔫</button>
-                    <button class="act-btn" onclick="humanReload()">リロード 🔄</button>
-                    <button class="act-btn" onclick="humanPunch()">殴り 👊</button>
-                    <button class="act-btn" onclick="humanKick()">蹴り 🦶</button>
-                `;
-            } else {
-                container.innerHTML = `
-                    <button class="act-btn" onclick="zombieBite()">噛みつき 🦷</button>
-                    <button class="act-btn" onclick="zombieScratch()">引っ掻き 爪</button>
-                    <button class="act-btn" id="btnRoar" onclick="zombieRoar()">叫び（スタン） 🗣️</button>
-                `;
-            }
-        }
-
-        function checkObstacleCollision(newPos, radius = 0.5) {
-            for (let obs of obstacles) {
-                const box = obs.box;
-                const closestX = Math.max(box.min.x, Math.min(newPos.x, box.max.x));
-                const closestZ = Math.max(box.min.z, Math.min(newPos.z, box.max.z));
-                const distX = newPos.x - closestX;
-                const distZ = newPos.z - closestZ;
-                if ((distX * distX + distZ * distZ) < (radius * radius)) {
-                    return true;
-                }
-            }
-            return false;
-        }
-
-        function movePlayer() {
-            if (!gameStarted || player.stunTimer > 0 || player.isDead) return;
-
-            if (Math.abs(dpadInput.x) > 0.05 || Math.abs(dpadInput.y) > 0.05) {
-                const forwardX = -Math.sin(cameraAngleY);
-                const forwardZ = -Math.cos(cameraAngleY);
-                const rightX = Math.cos(cameraAngleY);
-                const rightZ = -Math.sin(cameraAngleY);
-
-                const moveX = (rightX * dpadInput.x - forwardX * dpadInput.y) * player.speed;
-                const moveZ = (rightZ * dpadInput.x - forwardZ * dpadInput.y) * player.speed;
-
-                let nextPos = player.mesh.position.clone();
-                nextPos.x += moveX;
-                if (!checkObstacleCollision(nextPos)) player.mesh.position.x = nextPos.x;
-
-                nextPos = player.mesh.position.clone();
-                nextPos.z += moveZ;
-                if (!checkObstacleCollision(nextPos)) player.mesh.position.z = nextPos.z;
-
-                player.mesh.rotation.y = Math.atan2(moveX, moveZ);
-            }
-        }
-
-        // 射撃（1体のみヒットするように不具合修正）
-        function humanShoot() {
-            if (!gameStarted || player.isDead || playerStats.ammo <= 0) { playSE(200, 'sawtooth', 0.1); return; }
-            playerStats.ammo--;
-            playSE(900, 'square', 0.08);
-            updateHUD();
-
-            recoilZ = 0.25;
-            if (muzzleFlash) { muzzleFlash.visible = true; muzzleFlashTimer = 3; }
-            createBulletTracer();
-
-            // プレイヤーの前方にある「最も近い1体」だけを探して攻撃
-            const pPos = player.mesh.position;
-            const forward = new THREE.Vector3(Math.sin(player.mesh.rotation.y), 0, Math.cos(player.mesh.rotation.y)).normalize();
-
-            let targetEnemy = null;
-            let minDistance = 15; // 射程
-
-            entities.forEach(e => {
-                if (e.team !== 'human' && e.hp > 0 && !e.isDead) {
-                    const toEnemy = e.mesh.position.clone().sub(pPos);
-                    const dist = toEnemy.length();
-                    if (dist < minDistance) {
-                        // 前方約30度以内かチェック
-                        const angle = forward.angleTo(toEnemy.clone().normalize());
-                        if (angle < 0.5) {
-                            minDistance = dist;
-                            targetEnemy = e;
-                        }
-                    }
-                }
-            });
-
-            // 1体のみダメージ
-            if (targetEnemy) {
-                targetEnemy.hp -= 35;
-            }
-        }
-
-        function createBulletTracer() {
-            const start = player.mesh.position.clone().add(new THREE.Vector3(0, 1.1, 0));
-            const dir = new THREE.Vector3(Math.sin(player.mesh.rotation.y), 0, Math.cos(player.mesh.rotation.y));
-            const end = start.clone().add(dir.multiplyScalar(15));
-
-            const points = [start, end];
-            const geo = new THREE.BufferGeometry().setFromPoints(points);
-            const mat = new THREE.LineBasicMaterial({ color: 0xffea00 });
-            const line = new THREE.Line(geo, mat);
-            scene.add(line);
-            setTimeout(() => scene.remove(line), 50);
-        }
-
-        function humanReload() {
-            if (!gameStarted || player.isDead || playerStats.reserveAmmo <= 0 || playerStats.ammo >= 10) return;
-            playSE(400, 'sine', 0.2);
-            const needed = 10 - playerStats.ammo;
-            const load = Math.min(needed, playerStats.reserveAmmo);
-            playerStats.ammo += load;
-            playerStats.reserveAmmo -= load;
-            updateHUD();
-        }
-
-        function humanPunch() { if (gameStarted && !player.isDead) { playSE(500, 'triangle', 0.1); meleeAttack(15, 2.5); } }
-        function humanKick() { if (gameStarted && !player.isDead) { playSE(300, 'triangle', 0.15); meleeAttack(25, 3.0); } }
-
-        function zombieBite() { if (gameStarted && !player.isDead) { playSE(250, 'sawtooth', 0.15); meleeAttack(30, 2.0); } }
-        function zombieScratch() { if (gameStarted && !player.isDead) { playSE(400, 'sawtooth', 0.1); meleeAttack(18, 2.5); } }
-        
-        function zombieRoar() {
-            if (!gameStarted || player.isDead || roarCooldownTimer > 0) return;
-            roarCooldownTimer = 60;
-            playSE(150, 'sawtooth', 0.4);
-
-            entities.forEach(e => {
-                if (e.team === 'human' && e.hp > 0 && !e.isDead) {
-                    if (player.mesh.position.distanceTo(e.mesh.position) < 8) {
-                        e.stunTimer = 90;
-                    }
-                }
-            });
-        }
-
-        function meleeAttack(dmg, range) {
-            entities.forEach(e => {
-                if (e.team !== playerTeam && e.hp > 0 && !e.isDead) {
-                    if (player.mesh.position.distanceTo(e.mesh.position) < range) e.hp -= dmg;
-                }
-            });
-        }
-
-        // 観戦モード開始
-        function startSpectator() {
-            document.getElementById('death-screen').style.display = 'none';
-            document.getElementById('spectate-hud').style.display = 'block';
-            document.getElementById('dpad-base').style.display = 'none';
-            document.getElementById('actionContainer').style.display = 'none';
-            isSpectating = true;
-        }
-
-        // 観戦対象切り替え
-        function nextSpectateTarget() {
-            spectateIndex++;
-            playSE(700, 'sine', 0.08);
-        }
-
-        // ホーム画面に戻る（リセット）
-        function resetToHome() {
-            location.reload(); // 確実にクリーンリセット
-        }
-
-        // 勝敗判定チェック
-        function checkGameEnd() {
-            if (gameEnded) return;
-
-            const aliveHumans = entities.filter(e => e.team === 'human' && e.hp > 0 && !e.isDead).length;
-            const aliveZombies = entities.filter(e => e.team === 'zombie' && e.hp > 0 && !e.isDead).length;
-
-            if (aliveHumans === 0 || aliveZombies === 0) {
-                gameEnded = true;
-                const winText = aliveHumans > 0 ? "People Win!" : "Zombie Win!";
-                showResultBanner(winText);
-            }
-        }
-
-        // 勝敗結果テロップ ＆ 5秒カウントダウン自動ホーム復帰
-        function showResultBanner(text) {
-            const banner = document.getElementById('result-banner');
-            banner.style.display = 'block';
-            banner.innerHTML = `
-                <div style="font-size: 56px; color: #ffeb3b; font-weight: bold; text-shadow: 0 0 20px #000, 0 0 10px #f00;">${text}</div>
-                <div id="return-msg" style="font-size: 20px; color: #fff; margin-top: 15px; font-weight: bold;">5秒後に自動でホームへ戻ります...</div>
-            `;
-
-            let count = 5;
-            const interval = setInterval(() => {
-                count--;
-                const msg = document.getElementById('return-msg');
-                if (msg) msg.innerText = `${count}秒後に自動でホームへ戻ります...`;
-                if (count <= 0) {
-                    clearInterval(interval);
-                    resetToHome();
-                }
-            }, 1000);
-        }
-
-        function setupTouchControls() {
-            window.addEventListener('touchstart', (e) => {
-                for (let t of e.changedTouches) {
-                    if (t.clientX < window.innerWidth / 2 && touchDpadId === null) {
-                        touchDpadId = t.identifier;
-                        updateDpadUI(t.clientX, t.clientY);
-                    } 
-                    else if (t.clientX >= window.innerWidth / 2 && touchLookId === null) {
-                        touchLookId = t.identifier;
-                        lastTouchX = t.clientX; lastTouchY = t.clientY;
-                        hitRing = { active: true, x: t.clientX, y: t.clientY, progress: 0 };
-                        playSE(700, 'sine', 0.05);
-                    }
-                }
-            }, { passive: false });
-
-            window.addEventListener('touchmove', (e) => {
-                for (let t of e.changedTouches) {
-                    if (t.identifier === touchDpadId) updateDpadUI(t.clientX, t.clientY);
-                    if (t.identifier === touchLookId) {
-                        let dx = t.clientX - lastTouchX;
-                        let dy = t.clientY - lastTouchY;
-                        cameraAngleY -= dx * 0.005;
-                        cameraAngleX = Math.max(0.1, Math.min(1.0, cameraAngleX + dy * 0.005));
-                        lastTouchX = t.clientX; lastTouchY = t.clientY;
-                        hitRing.x = t.clientX; hitRing.y = t.clientY;
-                    }
-                }
-            }, { passive: false });
-
-            const resetTouch = (e) => {
-                for (let t of e.changedTouches) {
-                    if (t.identifier === touchDpadId) {
-                        touchDpadId = null;
-                        dpadInput = { x: 0, y: 0 };
-                        document.getElementById('dpad-knob').style.transform = `translate(0px, 0px)`;
-                    }
-                    if (t.identifier === touchLookId) { touchLookId = null; hitRing.active = false; }
-                }
-            };
-            window.addEventListener('touchend', resetTouch);
-            window.addEventListener('touchcancel', resetTouch);
-        }
-
-        function updateDpadUI(tx, ty) {
-            const dpadBase = document.getElementById('dpad-base').getBoundingClientRect();
-            const centerX = dpadBase.left + dpadBase.width / 2;
-            const centerY = dpadBase.top + dpadBase.height / 2;
-
-            let dx = tx - centerX;
-            let dy = ty - centerY;
-            let dist = Math.hypot(dx, dy);
-            const maxRadius = 40;
-
-            if (dist > 0) {
-                let clampDist = Math.min(dist, maxRadius);
-                let knobX = (dx / dist) * clampDist;
-                let knobY = (dy / dist) * clampDist;
-                document.getElementById('dpad-knob').style.transform = `translate(${knobX}px, ${knobY}px)`;
-
-                dpadInput.x = dx / maxRadius;
-                dpadInput.y = dy / maxRadius;
-            }
-        }
-
-        // --- メインループ ---
-        function animate() {
-            requestAnimationFrame(animate);
-
-            const now = performance.now();
-            const delta = (now - lastTime) / 1000;
-            lastTime = now;
-
-            // 「叫び」のクールダウン計算
-            if (roarCooldownTimer > 0) {
-                roarCooldownTimer = Math.max(0, roarCooldownTimer - delta);
-                const btnRoar = document.getElementById('btnRoar');
-                if (btnRoar) {
-                    btnRoar.innerText = `叫び (${Math.ceil(roarCooldownTimer)}秒)`;
-                    btnRoar.disabled = true;
-                }
-            } else {
-                const btnRoar = document.getElementById('btnRoar');
-                if (btnRoar && btnRoar.disabled) {
-                    btnRoar.innerText = `叫び（スタン） 🗣️`;
-                    btnRoar.disabled = false;
-                }
-            }
-
-            // 死亡アニメーション ＆ 死亡時UI表示
-            entities.forEach(e => {
-                if (e.hp <= 0) {
-                    e.isDead = true;
-                    if (e.mesh.rotation.x > -Math.PI / 2) {
-                        e.mesh.rotation.x = Math.max(-Math.PI / 2, e.mesh.rotation.x - 0.1);
-                        e.mesh.position.y = Math.max(0.4, e.mesh.position.y - 0.05);
-                    }
-                }
-            });
-
-            // プレイヤーが死んだら死亡UIを表示（観戦中・ゲーム終了時除く）
-            if (player.isDead && !isSpectating && !deathScreenShown && !gameEnded) {
-                deathScreenShown = true;
-                document.getElementById('death-screen').style.display = 'flex';
-            }
-
-            if (player.stunTimer > 0) player.stunTimer--;
-            movePlayer();
-
-            // リコイル復元
-            if (recoilZ > 0) recoilZ = THREE.MathUtils.lerp(recoilZ, 0, 0.2);
-            if (gunMesh) {
-                gunMesh.position.z = 0.4 - recoilZ;
-                gunMesh.rotation.x = recoilZ * 1.5;
-            }
-
-            if (muzzleFlashTimer > 0) {
-                muzzleFlashTimer--;
-                if (muzzleFlashTimer <= 0 && muzzleFlash) muzzleFlash.visible = false;
-            }
-
-            // 弾薬箱取得
-            if (!player.isDead) {
-                ammoBoxes.forEach((box, idx) => {
-                    if (player.mesh.position.distanceTo(box.position) < 1.2) {
-                        playerStats.reserveAmmo += 10;
-                        playSE(800, 'sine', 0.15);
-                        scene.remove(box);
-                        ammoBoxes.splice(idx, 1);
-                        updateHUD();
-                    }
-                });
-            }
-
-            // NPC AI動作 ＆ 勝敗判定
-            if (gameStarted) {
-                updateNPCs();
-                checkGameEnd();
-            }
-
-            // カメラ制御 (通常 or 観戦スペクテイターモード)
-            const camDist = 6;
-            let camTargetPos = player.mesh.position;
-
-            if (isSpectating) {
-                const aliveEntities = entities.filter(e => e.hp > 0 && !e.isDead);
-                if (aliveEntities.length > 0) {
-                    const target = aliveEntities[spectateIndex % aliveEntities.length];
-                    camTargetPos = target.mesh.position;
-                }
-            }
-
-            camera.position.x = camTargetPos.x + Math.sin(cameraAngleY) * camDist * Math.cos(cameraAngleX);
-            camera.position.y = camTargetPos.y + Math.sin(cameraAngleX) * camDist + 1;
-            camera.position.z = camTargetPos.z + Math.cos(cameraAngleY) * camDist * Math.cos(cameraAngleX);
-            camera.lookAt(camTargetPos.x, camTargetPos.y + 1, camTargetPos.z);
-
-            renderer.render(scene, camera);
-            drawFX();
-            updateHUD();
-        }
-
-        // NPC AI
-        function updateNPCs() {
-            entities.forEach(e => {
-                if (e.isPlayer || e.hp <= 0 || e.isDead) return;
-                if (e.stunTimer > 0) { e.stunTimer--; return; }
-
-                if (e.cooldown > 0) e.cooldown--;
-
-                let target = null, minDist = 999;
-                entities.forEach(other => {
-                    if (other.team !== e.team && other.hp > 0 && !other.isDead) {
-                        let d = e.mesh.position.distanceTo(other.mesh.position);
-                        if (d < minDist) { minDist = d; target = other; }
-                    }
-                });
-
-                if (target) {
-                    let dir = target.mesh.position.clone().sub(e.mesh.position).normalize();
-                    let moveX = dir.x * e.speed;
-                    let moveZ = dir.z * e.speed;
-
-                    let nextX = e.mesh.position.clone(); nextX.x += moveX;
-                    if (!checkObstacleCollision(nextX)) e.mesh.position.x = nextX.x;
-
-                    let nextZ = e.mesh.position.clone(); nextZ.z += moveZ;
-                    if (!checkObstacleCollision(nextZ)) e.mesh.position.z = nextZ.z;
-
-                    e.mesh.rotation.y = Math.atan2(dir.x, dir.z);
-
-                    if (minDist < 2.2 && e.cooldown === 0) {
-                        target.hp -= (e.team === 'human') ? 18 : 10;
-                        e.cooldown = 35;
-                    }
-                }
-            });
-        }
-
-        function updateHUD() {
-            document.getElementById('hpInfo').innerText = `HP: ${Math.max(0, player.hp)}${player.isDead ? ' (死亡)' : ''}`;
-            if (playerTeam === 'human') {
-                document.getElementById('ammoInfo').innerText = `弾薬: ${playerStats.ammo} / ${playerStats.reserveAmmo}`;
-            } else {
-                document.getElementById('ammoInfo').innerText = `状態: ${player.stunTimer > 0 ? 'スタン中！' : '正常'}`;
-            }
-        }
-
-        function drawFX() {
-            const cvs = document.getElementById('fxCanvas');
-            cvs.width = window.innerWidth; cvs.height = window.innerHeight;
-            const ctx = cvs.getContext('2d');
-
-            if (hitRing.active) {
-                hitRing.progress += 0.08;
-                if (hitRing.progress > 1) hitRing.progress = 0;
-                ctx.beginPath();
-                ctx.arc(hitRing.x, hitRing.y, 30, 0, Math.PI * 2 * hitRing.progress);
-                ctx.strokeStyle = 'rgba(255, 255, 255, 0.8)';
-                ctx.lineWidth = 5;
-                ctx.stroke();
-            }
-        }
-    </script>
+      }
+    }
+  });
+}
+
+/* =========================================================
+   HUD
+========================================================= */
+function showCenterMsg(txt){
+  const el = document.getElementById('centerMsg');
+  el.textContent = txt;
+  el.style.opacity = 1;
+  clearTimeout(showCenterMsg._t);
+  showCenterMsg._t = setTimeout(()=>{ el.style.opacity=0; }, 900);
+}
+function flashHit(isDamageTaken){
+  const el = document.getElementById('hitFlash');
+  el.style.background = isDamageTaken ? 'rgba(255,0,0,0.28)' : 'rgba(255,255,255,0.06)';
+  setTimeout(()=>{ el.style.background='rgba(255,0,0,0)'; }, 120);
+}
+function flashStun(){
+  const el = document.getElementById('stunFlash');
+  el.style.background = 'rgba(150,30,30,0.4)';
+  setTimeout(()=>{ el.style.background='rgba(120,20,20,0)'; }, CFG.screamStun*1000);
+}
+
+function updateHud(){
+  if(!player) return;
+  document.getElementById('hpBar').style.width = Math.max(0,player.hp)+'%';
+  document.getElementById('factionTag').textContent = player.faction==='zombie' ? 'ZOMBIE FACTION' : 'HUMAN FACTION';
+  document.getElementById('factionTag').className = 'faction-tag ' + player.faction;
+
+  const weaponEl = document.getElementById('weaponName');
+  const ammoEl = document.getElementById('ammoCount');
+  const reserveEl = document.getElementById('reserveCount');
+  const reloadTip = document.getElementById('reloadTip');
+  if(player.faction==='human'){
+    if(player.hasGun){
+      weaponEl.textContent = 'PISTOL';
+      ammoEl.textContent = player.ammoInGun;
+      reserveEl.textContent = ' / '+player.reserveAmmo;
+      reloadTip.textContent = player.isReloading ? 'RELOADING...' : (player.ammoInGun===0 ? '[R] TO RELOAD' : '');
+    } else {
+      weaponEl.textContent = 'UNARMED (FIST)';
+      ammoEl.textContent = '--';
+      reserveEl.textContent = '';
+      reloadTip.textContent = '';
+    }
+    document.getElementById('abilityLine').innerHTML = 'LMB SHOOT/PUNCH &nbsp; RMB KICK &nbsp; R RELOAD';
+  } else {
+    weaponEl.textContent = 'INFECTED';
+    ammoEl.textContent = '';
+    reserveEl.textContent = '';
+    reloadTip.textContent = '';
+    const cd = player.screamCdTimer>0 ? player.screamCdTimer.toFixed(1)+'s' : 'READY';
+    document.getElementById('abilityLine').innerHTML = 'LMB BITE &nbsp; RMB SCRATCH &nbsp; Q SCREAM <b style="color:#7fb238">('+cd+')</b>';
+  }
+
+  const allies = entities.filter(e=>e.alive && e.faction===player.faction).length;
+  const enemies = entities.filter(e=>e.alive && e.faction!==player.faction).length;
+  document.getElementById('allyCount').textContent = allies;
+  document.getElementById('enemyCount').textContent = enemies;
+}
+
+/* =========================================================
+   GAME LOOP
+========================================================= */
+function tick(){
+  requestAnimationFrame(tick);
+  const dt = Math.min(clock.getDelta(), 0.06);
+  if(!gameActive || paused) { renderer.render(scene,camera); return; }
+
+  entities.forEach(ent=>{
+    if(!ent.alive) return;
+    if(ent.fireTimer>0) ent.fireTimer -= dt;
+    if(ent.meleeTimer>0) ent.meleeTimer -= dt;
+    if(ent.screamCdTimer>0) ent.screamCdTimer -= dt;
+    if(ent.stunTimer>0) ent.stunTimer -= dt;
+    if(ent.flashTimer>0){
+      ent.flashTimer -= dt;
+      const c = ent.flashTimer>0 ? 0xffffff : (ent.faction==='zombie'?0x5c7a34:0x8a7457);
+      ent.bodyMesh.material.emissive = new THREE.Color(ent.flashTimer>0?0x883333:0x000000);
+    }
+    if(ent.isReloading){
+      ent.reloadTimer -= dt;
+      if(ent.reloadTimer<=0){
+        ent.isReloading = false;
+        const need = CFG.magSize - ent.ammoInGun;
+        const take = Math.min(need, ent.reserveAmmo);
+        ent.ammoInGun += take;
+        ent.reserveAmmo -= take;
+      }
+    }
+    if(ent.group.userData.gunMesh){ ent.group.userData.gunMesh.visible = !!ent.hasGun; }
+
+    if(!ent.isPlayer){
+      ent.thinkTimer -= dt;
+      if(ent.thinkTimer<=0){
+        ent.thinkTimer = CFG.npcThinkInterval + Math.random()*0.1;
+      }
+      updateNpcAI(ent, dt);
+      ent.group.rotation.y = ent.yaw;
+    }
+  });
+
+  updatePlayerMovement(dt);
+  updateCamera();
+  updatePickups(dt);
+  updateHud();
+  checkWinLoss();
+
+  renderer.render(scene, camera);
+}
+
+function checkWinLoss(){
+  if(!gameActive) return;
+  const humansAlive = entities.some(e=>e.faction==='human' && e.alive);
+  const zombiesAlive = entities.some(e=>e.faction==='zombie' && e.alive);
+  if(!humansAlive){ endGame(playerFaction==='zombie'); }
+  else if(!zombiesAlive){ endGame(playerFaction==='human'); }
+}
+
+/* =========================================================
+   FLOW: SELECT -> LOADING -> GAME -> RESULT
+========================================================= */
+function showScreen(id){
+  ['screen-select','screen-loading','screen-result'].forEach(s=>{
+    document.getElementById(s).classList.toggle('hidden', s!==id);
+  });
+}
+
+function startFlow(faction){
+  playerFaction = faction;
+  showScreen('screen-loading');
+  const bar = document.getElementById('loadBarInner');
+  const tip = document.getElementById('loadTip');
+  const tips = ['マップを生成中...','部隊を配置中...','武器を配置中...','戦闘AIを初期化中...','世界を汚染中...'];
+  let p = 0;
+  bar.style.width='0%';
+  const iv = setInterval(()=>{
+    p += 8 + Math.random()*14;
+    tip.textContent = tips[Math.min(tips.length-1, Math.floor(p/22))];
+    if(p>=100){
+      p=100; clearInterval(iv);
+      bar.style.width='100%';
+      setTimeout(()=>{ launchGame(faction); }, 260);
+    }
+    bar.style.width = p+'%';
+  }, 160);
+  // build the world while bar fills
+  setTimeout(()=>{ buildWorld(faction); }, 50);
+}
+
+function launchGame(faction){
+  showScreen(null);
+  document.getElementById('hud').style.display='block';
+  playerKills = 0;
+  document.getElementById('killCount').textContent = 0;
+  yaw = 0; pitch = -0.12;
+  player.group.rotation.y = yaw;
+  updateCamera();
+  gameActive = true;
+  paused = false;
+  const canvas = document.getElementById('gameCanvas');
+  canvas.requestPointerLock();
+}
+
+function endGame(playerWon){
+  gameActive = false;
+  document.getElementById('hud').style.display='none';
+  document.getElementById('pauseOverlay').style.display='none';
+  if(document.pointerLockElement) document.exitPointerLock();
+  document.getElementById('resultTitle').textContent = playerWon ? 'WIN' : 'LOSE';
+  document.getElementById('resultTitle').className = 'result-title ' + (playerWon?'win':'lose');
+  document.getElementById('resultSub').textContent = playerWon
+    ? (playerFaction==='human' ? 'ZOMBIES ELIMINATED' : 'HUMANS ELIMINATED')
+    : (playerFaction==='human' ? 'YOUR SQUAD WAS OVERRUN' : 'YOUR HORDE WAS WIPED OUT');
+  showScreen('screen-result');
+}
+
+document.getElementById('card-zombie').addEventListener('click', ()=>startFlow('zombie'));
+document.getElementById('card-human').addEventListener('click', ()=>startFlow('human'));
+document.getElementById('btnRestart').addEventListener('click', ()=>{ showScreen('screen-select'); });
+
+/* =========================================================
+   BOOT
+========================================================= */
+initThree();
+setupInput();
+tick();
+
+})();
+</script>
 </body>
 </html>
