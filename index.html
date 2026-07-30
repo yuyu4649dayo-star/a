@@ -422,7 +422,7 @@ function spawnEntity(faction, centerPos, isPlayerSlot){
   const headColor = faction==='zombie' ? 0x6f8f42 : 0xd9b899;
 
   const body = new THREE.Mesh(
-    new THREE.CapsuleGeometry(0.42, 1.05, 4, 8),
+    new THREE.CylinderGeometry(0.42, 0.36, 1.25, 8),
     new THREE.MeshStandardMaterial({color:bodyColor, roughness:0.8})
   );
   body.position.y = 1.05; body.castShadow = true;
