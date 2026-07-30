@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <title>OUTBREAK :: 5v5</title>
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Share+Tech+Mono&display=swap" rel="stylesheet">
 <style>
@@ -145,6 +145,43 @@
   }
   #pauseOverlay p{ font-family:'Bebas Neue',sans-serif; font-size:30px; letter-spacing:6px; }
   #pauseOverlay span{ font-size:11px; letter-spacing:2px; color:var(--steel); margin-top:10px;}
+
+  /* ---------- COUNTDOWN ---------- */
+  #screen-countdown{ background:transparent; z-index:22; }
+  .countdown-label{ font-size:12px; letter-spacing:6px; color:var(--bone); opacity:0.85; margin-bottom:6px; }
+  .countdown-number{
+    font-family:'Bebas Neue',sans-serif; font-size:180px; line-height:1; color:var(--blood-bright);
+    text-shadow:0 0 40px rgba(232,48,59,0.85), 0 0 90px rgba(232,48,59,0.4);
+    animation:cdPop 1s ease-out;
+  }
+  @keyframes cdPop{ 0%{ transform:scale(1.7); opacity:0; } 25%{ transform:scale(1); opacity:1; } 100%{ transform:scale(1); opacity:1; } }
+
+  /* ---------- MOBILE CONTROLS ---------- */
+  #gameCanvas{ touch-action:none; }
+  .dpad{
+    position:absolute; left:22px; bottom:26px; width:150px; height:150px; pointer-events:auto;
+    display:grid; grid-template-columns:1fr 1fr 1fr; grid-template-rows:1fr 1fr 1fr; gap:5px;
+  }
+  .dpad-btn{
+    background:rgba(217,203,168,0.10); border:1px solid rgba(217,203,168,0.35); color:var(--bone);
+    font-size:20px; border-radius:6px; touch-action:none; -webkit-tap-highlight-color:transparent; cursor:pointer;
+  }
+  .dpad-btn:active, .dpad-btn.pressed{ background:rgba(217,203,168,0.4); }
+  .dpad-up{ grid-column:2; grid-row:1; } .dpad-left{ grid-column:1; grid-row:2; }
+  .dpad-right{ grid-column:3; grid-row:2; } .dpad-down{ grid-column:2; grid-row:3; }
+
+  .action-buttons{
+    position:absolute; right:22px; bottom:120px; pointer-events:auto;
+    display:flex; align-items:flex-end; gap:14px;
+  }
+  .action-btn{
+    width:58px; height:58px; border-radius:50%; font-size:24px;
+    background:rgba(217,203,168,0.12); border:1px solid rgba(217,203,168,0.4); color:var(--bone);
+    touch-action:none; -webkit-tap-highlight-color:transparent; cursor:pointer;
+  }
+  .action-btn.primary{ width:76px; height:76px; font-size:30px; background:rgba(232,48,59,0.22); border-color:var(--blood-bright); }
+  .action-btn.small{ width:44px; height:44px; font-size:16px; margin-bottom:8px; }
+  .action-btn:active{ transform:scale(0.92); }
 </style>
 </head>
 <body>
@@ -189,6 +226,12 @@
   <button class="btn-restart" id="btnRestart">RETURN TO SELECT</button>
 </div>
 
+<!-- COUNTDOWN -->
+<div id="screen-countdown" class="screen hidden">
+  <div class="countdown-label">DEPLOYMENT IN</div>
+  <div class="countdown-number" id="countdownNumber">5</div>
+</div>
+
 <!-- HUD -->
 <div id="hud">
   <div class="crosshair"></div>
@@ -211,6 +254,20 @@
   <div id="stunFlash"></div>
   <div id="hitFlash"></div>
   <div id="centerMsg"></div>
+
+  <div class="dpad" id="dpad">
+    <button class="dpad-btn dpad-up" data-key="KeyW">▲</button>
+    <button class="dpad-btn dpad-left" data-key="KeyA">◀</button>
+    <button class="dpad-btn dpad-right" data-key="KeyD">▶</button>
+    <button class="dpad-btn dpad-down" data-key="KeyS">▼</button>
+  </div>
+
+  <div class="action-buttons" id="actionButtons">
+    <button class="action-btn small" id="btnScream" style="display:none;">😱</button>
+    <button class="action-btn small" id="btnReload" style="display:none;">⟳</button>
+    <button class="action-btn" id="btnSecondary">🦵</button>
+    <button class="action-btn primary" id="btnPrimary">🔫</button>
+  </div>
 </div>
 
 <div id="pauseOverlay"><p>PAUSED</p><span>クリックして再開</span></div>
@@ -250,7 +307,7 @@ let pickups = [];       // gun/ammo pickups
 let obstacles = [];     // {x,z,radius}
 let player = null;
 let playerFaction = 'human';
-let gameActive = false;
+let phase = 'select'; // select | loading | countdown | playing | result
 let paused = false;
 let yaw = 0, pitch = -0.12;
 let keys = {};
@@ -258,6 +315,7 @@ let mouseDown = {left:false, right:false};
 let entIdCounter = 0;
 let raycaster = new THREE.Raycaster();
 let audioCtx = null;
+const isTouchDevice = ('ontouchstart' in window) || navigator.maxTouchPoints>0;
 
 /* =========================================================
    AUDIO (simple synthesized SFX, no external assets)
@@ -504,7 +562,7 @@ function setupInput(){
 
   const canvas = document.getElementById('gameCanvas');
   canvas.addEventListener('mousedown', e=>{
-    if(!gameActive || paused) return;
+    if(phase!=='playing' || paused) return;
     if(e.button===0){ mouseDown.left = true; doPrimaryAction(); }
     if(e.button===2){ mouseDown.right = true; doSecondaryAction(); }
   });
@@ -522,7 +580,7 @@ function setupInput(){
   });
 
   document.addEventListener('pointerlockchange', ()=>{
-    if(document.pointerLockElement !== canvas && gameActive){
+    if(document.pointerLockElement !== canvas && phase==='playing'){
       paused = true;
       document.getElementById('pauseOverlay').style.display='flex';
     } else if(document.pointerLockElement === canvas){
@@ -532,14 +590,64 @@ function setupInput(){
   });
 
   document.getElementById('pauseOverlay').addEventListener('click', ()=>{
-    canvas.requestPointerLock();
+    if(!isTouchDevice) canvas.requestPointerLock();
   });
 
   canvas.addEventListener('click', ()=>{
-    if(gameActive && document.pointerLockElement !== canvas){
+    if(phase==='playing' && !isTouchDevice && document.pointerLockElement !== canvas){
       canvas.requestPointerLock();
     }
   });
+
+  /* ---- touch-drag look (mobile) ---- */
+  let lookTouchId = null, lastTX=0, lastTY=0;
+  canvas.addEventListener('touchstart', e=>{
+    if(phase!=='playing' || lookTouchId!==null) return;
+    const t = e.changedTouches[0];
+    lookTouchId = t.identifier; lastTX = t.clientX; lastTY = t.clientY;
+  }, {passive:true});
+  canvas.addEventListener('touchmove', e=>{
+    if(phase!=='playing' || lookTouchId===null) return;
+    for(const t of e.changedTouches){
+      if(t.identifier===lookTouchId){
+        const dx = t.clientX-lastTX, dy = t.clientY-lastTY;
+        lastTX = t.clientX; lastTY = t.clientY;
+        yaw -= dx * 0.0038;
+        pitch -= dy * 0.0038;
+        pitch = THREE.MathUtils.clamp(pitch, -0.7, 0.55);
+      }
+    }
+  }, {passive:true});
+  const releaseLookTouch = e=>{
+    for(const t of e.changedTouches){ if(t.identifier===lookTouchId) lookTouchId=null; }
+  };
+  canvas.addEventListener('touchend', releaseLookTouch);
+  canvas.addEventListener('touchcancel', releaseLookTouch);
+
+  /* ---- on-screen dpad ---- */
+  document.querySelectorAll('.dpad-btn').forEach(btn=>{
+    const key = btn.getAttribute('data-key');
+    const press = ev=>{ ev.preventDefault(); keys[key]=true; btn.classList.add('pressed'); };
+    const release = ev=>{ if(ev) ev.preventDefault(); keys[key]=false; btn.classList.remove('pressed'); };
+    btn.addEventListener('pointerdown', press);
+    btn.addEventListener('pointerup', release);
+    btn.addEventListener('pointerleave', release);
+    btn.addEventListener('pointercancel', release);
+    btn.addEventListener('contextmenu', ev=>ev.preventDefault());
+  });
+
+  /* ---- on-screen action buttons ---- */
+  const wire = (id, fn)=>{
+    document.getElementById(id).addEventListener('pointerdown', ev=>{
+      ev.preventDefault();
+      if(phase!=='playing' || paused) return;
+      fn();
+    });
+  };
+  wire('btnPrimary', doPrimaryAction);
+  wire('btnSecondary', doSecondaryAction);
+  wire('btnReload', tryReload);
+  wire('btnScream', tryScream);
 }
 
 /* =========================================================
@@ -567,7 +675,7 @@ function doSecondaryAction(){
   }
 }
 function tryReload(){
-  if(!player || player.faction!=='human' || !player.hasGun) return;
+  if(phase!=='playing' || !player || player.faction!=='human' || !player.hasGun) return;
   if(player.isReloading || player.ammoInGun>=CFG.magSize || player.reserveAmmo<=0) return;
   player.isReloading = true;
   player.reloadTimer = CFG.reloadTime;
@@ -575,7 +683,7 @@ function tryReload(){
   showCenterMsg('RELOADING...');
 }
 function tryScream(){
-  if(!player || player.faction!=='zombie' || player.screamCdTimer>0 || player.stunTimer>0) return;
+  if(phase!=='playing' || !player || player.faction!=='zombie' || player.screamCdTimer>0 || player.stunTimer>0) return;
   doScream(player);
 }
 
@@ -663,7 +771,7 @@ function killEntity(ent){
   SFX.death();
   ent.group.rotation.z = Math.PI/2.1;
   ent.group.position.y = 0.2;
-  if(ent.isPlayer && gameActive){
+  if(ent.isPlayer && phase==='playing'){
     endGame(false);
   }
 }
@@ -783,6 +891,98 @@ function updateCamera(){
 }
 
 /* =========================================================
+   LINEUP + COUNTDOWN
+========================================================= */
+let lineupInfo = null;
+let cdCamElapsed = 0;
+
+function formLineup(){
+  const team = entities.filter(e=>e.faction===playerFaction);
+  const ordered = team.slice();
+  const idx = ordered.indexOf(player);
+  if(idx>-1){ ordered.splice(idx,1); ordered.splice(Math.floor(ordered.length/2),0,player); }
+
+  const center = player.group.position.clone();
+  center.y = 0;
+  const facingDir = new THREE.Vector3(0,0,0).sub(center);
+  facingDir.y = 0;
+  if(facingDir.lengthSq()<0.01) facingDir.set(0,0,-1);
+  facingDir.normalize();
+  const rightDir = new THREE.Vector3(-facingDir.z, 0, facingDir.x);
+  const faceYaw = Math.atan2(-facingDir.x, -facingDir.z);
+  const spacing = 2.3;
+
+  ordered.forEach((ent,i)=>{
+    const offset = (i - (ordered.length-1)/2) * spacing;
+    const pos = center.clone().addScaledVector(rightDir, offset);
+    pos.y = 0;
+    ent.group.position.copy(pos);
+    ent.group.rotation.y = faceYaw;
+    ent.yaw = faceYaw;
+    ent.stunTimer = 0;
+    ent.hp = ent.maxHp;
+    if(ent.bodyMesh) ent.bodyMesh.material.emissive = new THREE.Color(0x000000);
+  });
+
+  lineupInfo = {center, facingDir};
+  yaw = faceYaw; pitch = -0.12;
+  player.group.rotation.y = yaw;
+}
+
+function updateCountdownCam(dt){
+  if(!lineupInfo) return;
+  cdCamElapsed += dt;
+  const dist = THREE.MathUtils.lerp(15, 8.5, Math.min(1, cdCamElapsed/5));
+  const camPos = lineupInfo.center.clone().addScaledVector(lineupInfo.facingDir, dist).add(new THREE.Vector3(0,3.0,0));
+  camera.position.copy(camPos);
+  camera.lookAt(lineupInfo.center.clone().add(new THREE.Vector3(0,1.6,0)));
+}
+
+function startCountdown(){
+  phase = 'countdown';
+  cdCamElapsed = 0;
+  formLineup();
+  document.getElementById('screen-select').classList.add('hidden');
+  document.getElementById('screen-loading').classList.add('hidden');
+  document.getElementById('screen-result').classList.add('hidden');
+  document.getElementById('hud').style.display='none';
+  const cdScreen = document.getElementById('screen-countdown');
+  const numEl = document.getElementById('countdownNumber');
+  cdScreen.classList.remove('hidden');
+
+  const seq = ['5','4','3','2','1','FIGHT!'];
+  let i = 0;
+  const showNext = ()=>{
+    numEl.textContent = seq[i];
+    numEl.style.animation = 'none';
+    void numEl.offsetWidth; // restart animation
+    numEl.style.animation = 'cdPop 1s ease-out';
+    beep(i<5 ? 260+ i*40 : 520, 0.12, 'square', 0.15, i<5?260+i*40:900);
+    i++;
+    if(i < seq.length){
+      setTimeout(showNext, 850);
+    } else {
+      setTimeout(()=>{
+        cdScreen.classList.add('hidden');
+        beginPlaying();
+      }, 700);
+    }
+  };
+  showNext();
+}
+
+function beginPlaying(){
+  phase = 'playing';
+  paused = false;
+  document.getElementById('hud').style.display='block';
+  playerKills = 0;
+  document.getElementById('killCount').textContent = 0;
+  updateCamera();
+  const canvas = document.getElementById('gameCanvas');
+  if(!isTouchDevice){ canvas.requestPointerLock(); }
+}
+
+/* =========================================================
    PICKUPS
 ========================================================= */
 function updatePickups(dt){
@@ -838,6 +1038,8 @@ function flashStun(){
 
 function updateHud(){
   if(!player) return;
+  document.getElementById('btnPrimary').textContent = player.faction==='human' ? '🔫' : '🧟';
+  document.getElementById('btnSecondary').textContent = player.faction==='human' ? '🦵' : '✋';
   document.getElementById('hpBar').style.width = Math.max(0,player.hp)+'%';
   document.getElementById('factionTag').textContent = player.faction==='zombie' ? 'ZOMBIE FACTION' : 'HUMAN FACTION';
   document.getElementById('factionTag').className = 'faction-tag ' + player.faction;
@@ -859,6 +1061,8 @@ function updateHud(){
       reloadTip.textContent = '';
     }
     document.getElementById('abilityLine').innerHTML = 'LMB SHOOT/PUNCH &nbsp; RMB KICK &nbsp; R RELOAD';
+    document.getElementById('btnReload').style.display = 'block';
+    document.getElementById('btnScream').style.display = 'none';
   } else {
     weaponEl.textContent = 'INFECTED';
     ammoEl.textContent = '';
@@ -866,6 +1070,8 @@ function updateHud(){
     reloadTip.textContent = '';
     const cd = player.screamCdTimer>0 ? player.screamCdTimer.toFixed(1)+'s' : 'READY';
     document.getElementById('abilityLine').innerHTML = 'LMB BITE &nbsp; RMB SCRATCH &nbsp; Q SCREAM <b style="color:#7fb238">('+cd+')</b>';
+    document.getElementById('btnReload').style.display = 'none';
+    document.getElementById('btnScream').style.display = 'block';
   }
 
   const allies = entities.filter(e=>e.alive && e.faction===player.faction).length;
@@ -880,7 +1086,13 @@ function updateHud(){
 function tick(){
   requestAnimationFrame(tick);
   const dt = Math.min(clock.getDelta(), 0.06);
-  if(!gameActive || paused) { renderer.render(scene,camera); return; }
+
+  if(phase==='countdown'){
+    updateCountdownCam(dt);
+    renderer.render(scene, camera);
+    return;
+  }
+  if(phase!=='playing' || paused) { renderer.render(scene,camera); return; }
 
   entities.forEach(ent=>{
     if(!ent.alive) return;
@@ -925,7 +1137,7 @@ function tick(){
 }
 
 function checkWinLoss(){
-  if(!gameActive) return;
+  if(phase!=='playing') return;
   const humansAlive = entities.some(e=>e.faction==='human' && e.alive);
   const zombiesAlive = entities.some(e=>e.faction==='zombie' && e.alive);
   if(!humansAlive){ endGame(playerFaction==='zombie'); }
@@ -943,6 +1155,7 @@ function showScreen(id){
 
 function startFlow(faction){
   playerFaction = faction;
+  phase = 'loading';
   showScreen('screen-loading');
   const bar = document.getElementById('loadBarInner');
   const tip = document.getElementById('loadTip');
@@ -965,22 +1178,15 @@ function startFlow(faction){
 
 function launchGame(faction){
   showScreen(null);
-  document.getElementById('hud').style.display='block';
-  playerKills = 0;
-  document.getElementById('killCount').textContent = 0;
-  yaw = 0; pitch = -0.12;
-  player.group.rotation.y = yaw;
-  updateCamera();
-  gameActive = true;
-  paused = false;
-  const canvas = document.getElementById('gameCanvas');
-  canvas.requestPointerLock();
+  startCountdown();
 }
 
 function endGame(playerWon){
-  gameActive = false;
+  phase = 'result';
+  paused = false;
   document.getElementById('hud').style.display='none';
   document.getElementById('pauseOverlay').style.display='none';
+  document.getElementById('screen-countdown').classList.add('hidden');
   if(document.pointerLockElement) document.exitPointerLock();
   document.getElementById('resultTitle').textContent = playerWon ? 'WIN' : 'LOSE';
   document.getElementById('resultTitle').className = 'result-title ' + (playerWon?'win':'lose');
@@ -992,7 +1198,7 @@ function endGame(playerWon){
 
 document.getElementById('card-zombie').addEventListener('click', ()=>startFlow('zombie'));
 document.getElementById('card-human').addEventListener('click', ()=>startFlow('human'));
-document.getElementById('btnRestart').addEventListener('click', ()=>{ showScreen('screen-select'); });
+document.getElementById('btnRestart').addEventListener('click', ()=>{ phase='select'; showScreen('screen-select'); });
 
 /* =========================================================
    BOOT
