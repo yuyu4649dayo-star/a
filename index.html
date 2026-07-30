@@ -409,6 +409,11 @@ function buildWorld(faction){
   ground.receiveShadow = true;
   scene.add(ground);
 
+  // spawn zones (defined early so obstacle placement can avoid them)
+  const humanSpawn = new THREE.Vector3(-CFG.mapHalf*0.75, 0, -CFG.mapHalf*0.75);
+  const zombieSpawn = new THREE.Vector3(CFG.mapHalf*0.75, 0, CFG.mapHalf*0.75);
+  const SPAWN_CLEAR = 13; // radius around each spawn corner kept free of obstacles
+
   // scattered obstacles (rubble / crates) - cylinders for simple collision
   const obsMat = new THREE.MeshStandardMaterial({color:0x4b463d, roughness:0.9});
   for(let i=0;i<16;i++){
@@ -417,6 +422,8 @@ function buildWorld(faction){
     const x = (Math.random()*2-1)*CFG.mapHalf*0.85;
     const z = (Math.random()*2-1)*CFG.mapHalf*0.85;
     if(Math.abs(x)<8 && Math.abs(z)<8) continue;
+    if(Math.hypot(x-humanSpawn.x, z-humanSpawn.z) < SPAWN_CLEAR+r) continue;
+    if(Math.hypot(x-zombieSpawn.x, z-zombieSpawn.z) < SPAWN_CLEAR+r) continue;
     const geo = new THREE.CylinderGeometry(r,r*1.05,h,7);
     const mesh = new THREE.Mesh(geo, obsMat);
     mesh.position.set(x,h/2,z);
@@ -449,10 +456,6 @@ function buildWorld(faction){
     scene.add(mesh);
     pickups.push({type:'ammo', mesh, x, z, active:true, spin:Math.random()*10});
   }
-
-  // spawn zones
-  const humanSpawn = new THREE.Vector3(-CFG.mapHalf*0.75, 0, -CFG.mapHalf*0.75);
-  const zombieSpawn = new THREE.Vector3(CFG.mapHalf*0.75, 0, CFG.mapHalf*0.75);
 
   const humanTeam = [];
   const zombieTeam = [];
@@ -978,8 +981,9 @@ function beginPlaying(){
   playerKills = 0;
   document.getElementById('killCount').textContent = 0;
   updateCamera();
-  const canvas = document.getElementById('gameCanvas');
-  if(!isTouchDevice){ canvas.requestPointerLock(); }
+  if(!isTouchDevice){
+    showCenterMsg('CLICK TO AIM');
+  }
 }
 
 /* =========================================================
@@ -1088,50 +1092,54 @@ function tick(){
   const dt = Math.min(clock.getDelta(), 0.06);
 
   if(phase==='countdown'){
-    updateCountdownCam(dt);
+    try{ updateCountdownCam(dt); }catch(err){ console.error('countdown cam error', err); }
     renderer.render(scene, camera);
     return;
   }
   if(phase!=='playing' || paused) { renderer.render(scene,camera); return; }
 
-  entities.forEach(ent=>{
-    if(!ent.alive) return;
-    if(ent.fireTimer>0) ent.fireTimer -= dt;
-    if(ent.meleeTimer>0) ent.meleeTimer -= dt;
-    if(ent.screamCdTimer>0) ent.screamCdTimer -= dt;
-    if(ent.stunTimer>0) ent.stunTimer -= dt;
-    if(ent.flashTimer>0){
-      ent.flashTimer -= dt;
-      const c = ent.flashTimer>0 ? 0xffffff : (ent.faction==='zombie'?0x5c7a34:0x8a7457);
-      ent.bodyMesh.material.emissive = new THREE.Color(ent.flashTimer>0?0x883333:0x000000);
-    }
-    if(ent.isReloading){
-      ent.reloadTimer -= dt;
-      if(ent.reloadTimer<=0){
-        ent.isReloading = false;
-        const need = CFG.magSize - ent.ammoInGun;
-        const take = Math.min(need, ent.reserveAmmo);
-        ent.ammoInGun += take;
-        ent.reserveAmmo -= take;
-      }
-    }
-    if(ent.group.userData.gunMesh){ ent.group.userData.gunMesh.visible = !!ent.hasGun; }
+  // movement + camera run first so a bug elsewhere (AI, pickups, HUD) can never
+  // block the player from moving or freeze the view.
+  try{ updatePlayerMovement(dt); }catch(err){ console.error('player movement error', err); }
+  try{ updateCamera(); }catch(err){ console.error('camera error', err); }
 
-    if(!ent.isPlayer){
-      ent.thinkTimer -= dt;
-      if(ent.thinkTimer<=0){
-        ent.thinkTimer = CFG.npcThinkInterval + Math.random()*0.1;
+  try{
+    entities.forEach(ent=>{
+      if(!ent.alive) return;
+      if(ent.fireTimer>0) ent.fireTimer -= dt;
+      if(ent.meleeTimer>0) ent.meleeTimer -= dt;
+      if(ent.screamCdTimer>0) ent.screamCdTimer -= dt;
+      if(ent.stunTimer>0) ent.stunTimer -= dt;
+      if(ent.flashTimer>0){
+        ent.flashTimer -= dt;
+        ent.bodyMesh.material.emissive = new THREE.Color(ent.flashTimer>0?0x883333:0x000000);
       }
-      updateNpcAI(ent, dt);
-      ent.group.rotation.y = ent.yaw;
-    }
-  });
+      if(ent.isReloading){
+        ent.reloadTimer -= dt;
+        if(ent.reloadTimer<=0){
+          ent.isReloading = false;
+          const need = CFG.magSize - ent.ammoInGun;
+          const take = Math.min(need, ent.reserveAmmo);
+          ent.ammoInGun += take;
+          ent.reserveAmmo -= take;
+        }
+      }
+      if(ent.group.userData.gunMesh){ ent.group.userData.gunMesh.visible = !!ent.hasGun; }
 
-  updatePlayerMovement(dt);
-  updateCamera();
-  updatePickups(dt);
-  updateHud();
-  checkWinLoss();
+      if(!ent.isPlayer){
+        ent.thinkTimer -= dt;
+        if(ent.thinkTimer<=0){
+          ent.thinkTimer = CFG.npcThinkInterval + Math.random()*0.1;
+        }
+        updateNpcAI(ent, dt);
+        ent.group.rotation.y = ent.yaw;
+      }
+    });
+  }catch(err){ console.error('entity update error', err); }
+
+  try{ updatePickups(dt); }catch(err){ console.error('pickup error', err); }
+  try{ updateHud(); }catch(err){ console.error('hud error', err); }
+  try{ checkWinLoss(); }catch(err){ console.error('winloss error', err); }
 
   renderer.render(scene, camera);
 }
